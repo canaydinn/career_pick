@@ -1,0 +1,103 @@
+/* ===== Career Pick — design system ===== */
+:root {
+  /* base palette (Electric — default direction) */
+  --bg: #07142E;
+  --bg-2: #0B1B3B;
+  --surface: #0E2147;
+  --surface-2: #122A57;
+  --line: rgba(255,255,255,0.10);
+  --line-strong: rgba(255,255,255,0.18);
+  --text: #EAF1FF;
+  --muted: #9DB2D8;
+  --faint: #6B82AE;
+  --accent: #3B6FF6;
+  --accent-ink: #ffffff;
+  --accent-2: #7CE3C4;
+  --accent-2-ink: #06251C;
+  --glow-1: rgba(59,111,246,0.55);
+  --glow-2: rgba(124,227,196,0.40);
+
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Plus Jakarta Sans", sans-serif;
+  --radius: 18px;
+  --radius-lg: 26px;
+  --maxw: 1200px;
+}
+
+/* ---- Theme directions ---- */
+body[data-theme="aurora"] {
+  --bg: #0A0A1F; --bg-2: #12102E; --surface: #1A1740; --surface-2: #221E52;
+  --line: rgba(255,255,255,0.10); --line-strong: rgba(255,255,255,0.18);
+  --text: #F0ECFF; --muted: #B7AEE6; --faint: #7E76B5;
+  --accent: #7C5CFC; --accent-2: #41E0FF; --accent-2-ink: #042027;
+  --glow-1: rgba(124,92,252,0.55); --glow-2: rgba(65,224,255,0.40);
+}
+body[data-theme="sunset"] {
+  --bg: #160E16; --bg-2: #1F1320; --surface: #2A1826; --surface-2: #361E2E;
+  --line: rgba(255,255,255,0.10); --line-strong: rgba(255,255,255,0.18);
+  --text: #FFF0EC; --muted: #E2B6AE; --faint: #B0817A;
+  --accent: #FF6B5C; --accent-2: #FFC857; --accent-2-ink: #3A2400;
+  --glow-1: rgba(255,107,92,0.50); --glow-2: rgba(255,200,87,0.40);
+}
+body[data-theme="forest"] {
+  --bg: #07140F; --bg-2: #0B1E16; --surface: #102A20; --surface-2: #14362A;
+  --line: rgba(255,255,255,0.10); --line-strong: rgba(255,255,255,0.18);
+  --text: #E7FBF1; --muted: #97C9B2; --faint: #5F9079;
+  --accent: #34D399; --accent-ink: #04231A; --accent-2: #A7F3D0; --accent-2-ink: #04231A;
+  --glow-1: rgba(52,211,153,0.45); --glow-2: rgba(167,243,208,0.35);
+}
+
+/* ---- Font pairings ---- */
+body[data-font="sora"]   { --font-display: "Sora", sans-serif; --font-body: "Manrope", sans-serif; }
+body[data-font="editorial"] { --font-display: "Instrument Serif", serif; --font-body: "Manrope", sans-serif; }
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+::selection { background: var(--accent); color: var(--accent-ink); }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--accent-2);
+  display: inline-flex; align-items: center; gap: 9px;
+}
+.eyebrow::before { content: ""; width: 22px; height: 2px; background: var(--accent-2); border-radius: 2px; }
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.02; margin: 0; letter-spacing: -0.02em; }
+.section-title { font-size: clamp(30px, 4vw, 52px); line-height: 1.04; }
+body[data-font="editorial"] h1, body[data-font="editorial"] h2, body[data-font="editorial"] h3 { font-weight: 400; letter-spacing: -0.01em; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  border: none; border-radius: 999px; font-weight: 700; font-size: 15px;
+  padding: 14px 24px; transition: transform .18s ease, box-shadow .25s ease, background .2s ease;
+  white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 10px 30px -8px var(--glow-1); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 16px 40px -8px var(--glow-1); }
+.btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--line-strong); }
+.btn-ghost:hover { background: rgba(255,255,255,0.05); border-color: var(--text); }
+.btn-mint { background: var(--accent-2); color: var(--accent-2-ink); box-shadow: 0 10px 30px -8px var(--glow-2); }
+.btn-mint:hover { transform: translateY(-2px); }
+
+/* atmosphere */
+.aura { position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0; }
+
+/* entrance: content is always visible by default. A gentle one-shot transition
+   is layered on via the `.is-ready` body class (toggled by React after mount),
+   which only ever transitions FROM visible-ish state and never traps content hidden. */
+.reveal { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
