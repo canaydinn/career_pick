@@ -2,8 +2,7 @@
   "functions": {
     "api/chat.js": {
       "memory": 512,
-      "maxDuration": 30,
-      "runtime": "nodejs18.x"
+      "maxDuration": 30
     },
     "api/assessment.py": {
       "memory": 1024,
