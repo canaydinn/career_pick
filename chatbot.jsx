@@ -40,34 +40,57 @@ function Chatbot({ c }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [showStarters, setShowStarters] = useState(true);
+  const [done, setDone] = useState(false);
   const scrollRef = useRef(null);
   const taRef = useRef(null);
+  // Sifrelenmis oturum token'i (sunucu stateless; degerlendirme durumunu tasir)
+  const sessionRef = useRef(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, busy]);
 
-  // reset greeting when language changes
+  // reset greeting + oturum when language changes
   useEffect(() => {
     setMessages([{ role: "assistant", content: c.greeting }]);
     setShowStarters(true);
+    setDone(false);
+    sessionRef.current = null;
   }, [c.greeting]);
 
   async function send(text) {
     const q = (text ?? input).trim();
-    if (!q || busy) return;
+    if (!q || busy || done) return;
     setShowStarters(false);
-    const next = [...messages, { role: "user", content: q }];
-    setMessages(next);
+    setMessages((m) => [...m, { role: "user", content: q }]);
     setInput("");
     setBusy(true);
+
     try {
-      const convo = next.map((m) => `${m.role === "user" ? "Kullanıcı/User" : "Asistan/Assistant"}: ${m.content}`).join("\n");
-      const reply = await window.claude.complete({
-        messages: [{ role: "user", content: `${c.system}\n\nKonuşma geçmişi:\n${convo}\n\nAsistan olarak yanıtla:` }],
+      const response = await fetch("/api/assessment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: q, session: sessionRef.current }),
       });
-      setMessages((m) => [...m, { role: "assistant", content: (reply || c.error).trim() }]);
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Sunucu hatası");
+      }
+
+      const data = await response.json();
+      const replyText = data.reply || c.error;
+
+      // Sunucudan donen guncel oturum token'ini sakla
+      if (data.session) sessionRef.current = data.session;
+      if (data.done) setDone(true);
+
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: replyText, asama: data.asama },
+      ]);
     } catch (e) {
+      console.error("[CHAT ERROR]", e.message);
       setMessages((m) => [...m, { role: "assistant", content: c.error }]);
     } finally {
       setBusy(false);
@@ -127,10 +150,11 @@ function Chatbot({ c }) {
           rows={1}
           value={input}
           placeholder={c.placeholder}
+          disabled={done}
           onChange={(e) => { setInput(e.target.value); autosize(e.target); }}
           onKeyDown={onKey}
         />
-        <button className="chat-send" onClick={() => send()} disabled={busy || !input.trim()} aria-label="Send">
+        <button className="chat-send" onClick={() => send()} disabled={busy || done || !input.trim()} aria-label="Send">
           <Icon name="send" size={18} />
         </button>
       </div>

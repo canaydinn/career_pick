@@ -1,0 +1,10 @@
+{
+  "name": "careerpick-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "openai": "^4.28.0",
+    "@qdrant/js-client-rest": "^1.8.0"
+  }
+}
