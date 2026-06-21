@@ -33,7 +33,7 @@ function SecCTA({ cta }) {
           <div style={{ position: "relative", zIndex: 2 }}>
             <h2>{cta.title}</h2>
             <p>{cta.sub}</p>
-            <a href={HOME2 + "#chatbox"} className="btn btn-mint">{cta.btn} <Ic2 name="arrow" size={17} /></a>
+            <a href={"kariyer%20sohbet.html"} className="btn btn-mint">{cta.btn} <Ic2 name="arrow" size={17} /></a>
           </div>
         </div>
       </div>
@@ -158,7 +158,7 @@ function CareersPage({ c }) {
                   <div className="job-title">{j.title}</div>
                   <div className="job-meta"><span className="job-team">{j.team}</span><span className="job-dot">·</span><span>{j.loc}</span></div>
                 </div>
-                <a href={HOME2 + "#chatbox"} className="btn btn-ghost job-btn">{p.apply} <Ic2 name="arrow" size={15} /></a>
+                <a href={"kariyer%20sohbet.html"} className="btn btn-ghost job-btn">{p.apply} <Ic2 name="arrow" size={15} /></a>
               </div>
             ))}
           </div>
@@ -202,7 +202,7 @@ function BlogPage({ c }) {
       <SecHero hero={p.hero} />
       <section className="section" style={{ paddingTop: 20 }}>
         <div className="wrap">
-          <a href={HOME2 + "#chatbox"} className="blog-feature">
+          <a href={"kariyer%20sohbet.html"} className="blog-feature">
             <div className="bf-media" data-tone="a"><span className="bf-flag">{p.featuredTag}</span></div>
             <div className="bf-body">
               <span className="post-tag">{featured.tag}</span>
@@ -213,7 +213,7 @@ function BlogPage({ c }) {
           </a>
           <div className="blog-grid">
             {rest.map((post, i) => (
-              <a href={HOME2 + "#chatbox"} className="post-card" key={i}>
+              <a href={"kariyer%20sohbet.html"} className="post-card" key={i}>
                 <div className="post-media" data-tone={["b","c","d","a","b"][i % 5]}></div>
                 <div className="post-body">
                   <span className="post-tag">{post.tag}</span>
@@ -241,7 +241,7 @@ function GuidePage({ c }) {
           <div className="section-head center"><h2 className="section-title">{p.catsTitle}</h2></div>
           <div className="guide-grid">
             {p.categories.map((cat, i) => (
-              <a href={HOME2 + "#chatbox"} className="guide-card" key={i}>
+              <a href={"kariyer%20sohbet.html"} className="guide-card" key={i}>
                 <span className="ic"><Ic2 name={cat.icon} size={24} /></span>
                 <div className="guide-head"><h3>{cat.title}</h3><span className="guide-count">{cat.count}</span></div>
                 <p>{cat.body}</p>
@@ -296,8 +296,8 @@ function TemplatesPage({ c }) {
                     <span className="tp-line w60"></span>
                   </div>
                   <div className="tpl-hover">
-                    <a href={HOME2 + "#chatbox"} className="btn btn-primary">{p.use}</a>
-                    <a href={HOME2 + "#chatbox"} className="btn btn-ghost">{p.preview}</a>
+                    <a href={"kariyer%20sohbet.html"} className="btn btn-primary">{p.use}</a>
+                    <a href={"kariyer%20sohbet.html"} className="btn btn-ghost">{p.preview}</a>
                   </div>
                 </div>
                 <div className="tpl-info">

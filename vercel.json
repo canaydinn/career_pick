@@ -7,6 +7,10 @@
     "api/assessment.py": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "api/sohbet.py": {
+      "memory": 1024,
+      "maxDuration": 60
     }
   }
 }

@@ -29,7 +29,7 @@ function Nav({ c, lang, setLang, base }) {
             <button className={lang === "tr" ? "on" : ""} onClick={() => setLang("tr")}>TR</button>
             <button className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}>EN</button>
           </div>
-          <a href={b ? b + "#chatbox" : "#chat"} className="btn btn-primary" style={{ padding: "11px 20px", fontSize: 14 }}>{c.nav.cta}</a>
+          <a href="kariyer%20sohbet.html" className="btn btn-primary" style={{ padding: "11px 20px", fontSize: 14 }}>{c.nav.cta}</a>
         </div>
       </div>
     </nav>
@@ -52,7 +52,7 @@ function Hero({ c }) {
           </h1>
           <p className="hero-sub">{t.sub}</p>
           <div className="hero-cta">
-            <a href="#chatbox" className="btn btn-primary">{t.ctaPrimary} <Ic name="arrow" size={17} /></a>
+            <a href="kariyer%20sohbet.html" className="btn btn-primary">{t.ctaPrimary} <Ic name="arrow" size={17} /></a>
             <a href="#how" className="btn btn-ghost">{t.ctaSecondary}</a>
           </div>
           <div className="hero-stats">
@@ -68,7 +68,31 @@ function Hero({ c }) {
           </div>
         </div>
         <div className="reveal" id="chatbox" style={{ animationDelay: ".12s" }}>
-          <CPChatbot c={c.chat} />
+          <div className="chatbot">
+            <div className="chat-head">
+              <div className="chat-id">
+                <span className="chat-avatar">
+                  <svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="9" fill="var(--accent)"/><path d="M9 20.5l4.2-9 3 6.2 2-3.4L22.5 20.5" stroke="var(--accent-ink)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/><circle cx="22.5" cy="11.5" r="2.1" fill="var(--accent-2)"/></svg>
+                </span>
+                <div>
+                  <div className="chat-name">{c.chat.title}</div>
+                  <div className="chat-status"><span className="dot"></span>{c.chat.status}</div>
+                </div>
+              </div>
+              <span className="chat-live"><Ic name="bolt" size={13} /> AI</span>
+            </div>
+            <div className="chat-body" style={{ height: "auto", minHeight: 200 }}>
+              <div className="msg assistant">
+                <span className="msg-av"><Ic name="spark-sm" size={14} /></span>
+                <div className="bubble">{c.chat.greeting}</div>
+              </div>
+            </div>
+            <div style={{ padding: 12, borderTop: "1px solid var(--line)" }}>
+              <a href="kariyer%20sohbet.html" className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }}>
+                {c.chat.title} <Ic name="arrow" size={16} />
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -201,7 +225,7 @@ function Footer({ c, base }) {
           <div style={{ position: "relative", zIndex: 2 }}>
             <h2>{f.title}</h2>
             <p>{f.sub}</p>
-            <a href={b ? b + "#chatbox" : "#chatbox"} className="btn btn-mint">{f.cta} <Ic name="arrow" size={17} /></a>
+            <a href="kariyer%20sohbet.html" className="btn btn-mint">{f.cta} <Ic name="arrow" size={17} /></a>
           </div>
         </div>
       </div>

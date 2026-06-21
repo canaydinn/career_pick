@@ -11,6 +11,7 @@ function Icon({ name, size = 24, stroke = 1.7 }) {
     case "spark": return (<svg {...p}><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>);
     case "send": return (<svg {...p}><path d="M5 12h14M13 6l6 6-6 6"/></svg>);
     case "arrow": return (<svg {...p}><path d="M5 12h14M13 6l6 6-6 6"/></svg>);
+    case "back": return (<svg {...p}><path d="M19 12H5M11 18l-6-6 6-6"/></svg>);
     case "spark-sm": return (<svg {...p}><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/></svg>);
     case "plus": return (<svg {...p}><path d="M12 5v14M5 12h14"/></svg>);
     case "check": return (<svg {...p}><path d="M5 12l4.5 4.5L19 7"/></svg>);

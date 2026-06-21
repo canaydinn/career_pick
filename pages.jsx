@@ -18,7 +18,7 @@ function FeaturesPage({ c }) {
           <span className="eyebrow">{p.hero.eyebrow}</span>
           <h1>{p.hero.title[0]} <span className="grad">{p.hero.title[1]}</span></h1>
           <p className="ph-sub">{p.hero.sub}</p>
-          <a href={HOME + "#chatbox"} className="btn btn-primary">{p.hero.cta} <IcP name="arrow" size={17} /></a>
+          <a href={"kariyer%20sohbet.html"} className="btn btn-primary">{p.hero.cta} <IcP name="arrow" size={17} /></a>
         </div>
       </section>
 
@@ -164,7 +164,7 @@ function PricingPage({ c }) {
                 <ul className="plan-feats">
                   {pl.features.map((f, j) => <li key={j}><Check /> {f}</li>)}
                 </ul>
-                <a href={HOME + "#chatbox"} className={"btn " + (pl.featured ? "btn-primary" : "btn-ghost")}>{pl.cta}</a>
+                <a href={"kariyer%20sohbet.html"} className={"btn " + (pl.featured ? "btn-primary" : "btn-ghost")}>{pl.cta}</a>
               </div>
             ))}
           </div>
@@ -246,7 +246,7 @@ function PageHero({ hero, cta }) {
         <span className="eyebrow">{hero.eyebrow}</span>
         <h1>{hero.title[0]} <span className="grad">{hero.title[1]}</span></h1>
         <p className="ph-sub">{hero.sub}</p>
-        {cta && <a href={HOME + "#chatbox"} className="btn btn-primary">{cta} <IcP name="arrow" size={17} /></a>}
+        {cta && <a href={"kariyer%20sohbet.html"} className="btn btn-primary">{cta} <IcP name="arrow" size={17} /></a>}
       </div>
     </section>
   );
@@ -261,7 +261,7 @@ function PageCTA({ cta }) {
           <div style={{ position: "relative", zIndex: 2 }}>
             <h2>{cta.title}</h2>
             <p>{cta.sub}</p>
-            <a href={HOME + "#chatbox"} className="btn btn-mint">{cta.btn} <IcP name="arrow" size={17} /></a>
+            <a href={"kariyer%20sohbet.html"} className="btn btn-mint">{cta.btn} <IcP name="arrow" size={17} /></a>
           </div>
         </div>
       </div>
