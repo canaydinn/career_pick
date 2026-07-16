@@ -73,7 +73,14 @@ function KariyerSohbet() {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [msgs, busy, phase]);
 
+  // Input, geri donup onceki cevabi geri doldururken de otomatik boyutlansin
+  useEffectK(() => {
+    if (taRef.current) autosize(taRef.current);
+  }, [input]);
+
   const questionText = (i) => (S.questions[i] ? S.questions[i].q : "");
+  // Tamamlanan soru sayisina gore ilerleme yuzdesi (sonuc ekraninda %100)
+  const progressPct = phase === "result" ? 100 : Math.round((step / N) * 100);
 
   function buildCevaplar(arr) {
     return S.questions.map((qq, i) => ({ soru: qq.q, key: qq.key, cevap: arr[i] || "" }));
@@ -126,6 +133,8 @@ function KariyerSohbet() {
   }
 
   function reaskTo(target) {
+    // Bu soruya daha once verilmis bir cevap varsa, duzenlemek uzere input'a geri doldur
+    const previousAnswer = answers[target] || "";
     setMsgs((prev) => {
       const idx = prev.findIndex((m) => m.qIndex === target);
       const cut = idx >= 0 ? prev.slice(0, idx) : prev;
@@ -133,6 +142,7 @@ function KariyerSohbet() {
     });
     setAnswers((a) => a.slice(0, target));
     setStep(target);
+    setInput(previousAnswer);
   }
 
   function goBack() {
@@ -191,6 +201,10 @@ function KariyerSohbet() {
           <div className="cs-progress">
             {phase === "asking" ? S.progress(Math.min(step + 1, N), N) : `${N} / ${N}`}
           </div>
+        </div>
+
+        <div className="cs-progress-track">
+          <div className="cs-progress-fill" style={{ width: progressPct + "%" }}></div>
         </div>
 
         {phase === "asking" ? (

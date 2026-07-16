@@ -36,42 +36,105 @@ function Logo({ size = 30 }) {
 }
 
 /* ---------- Live chatbot ---------- */
+// Bu sabitler api/assessment.py icindeki META_SENARYO_SAYISI / DERINLEME_SAYISI
+// ile ayni degerlerdedir; sadece ilerleme cubugu icin toplam adim tahmini uretir.
+const CS_META_SENARYO_SAYISI = 5;
+const CS_DERINLEME_SAYISI    = 3;
+const CS_STAGE1_WEIGHT       = 1; // kullanici tanima asamasi tek "soru" olarak sayilir
+const CS_TOTAL_STEPS         = CS_STAGE1_WEIGHT + CS_META_SENARYO_SAYISI + CS_DERINLEME_SAYISI;
+
+// Backend'in yanit metnine gomdugu "**Senaryo k/5**" / "**Derinleme Sorusu k/3**"
+// etiketlerini okuyarak su anki soru numarasini turetir (backend'e dokunmadan).
+function csProgressCurrent(asama, questionText) {
+  if (asama === 2) {
+    const m = /\*\*Senaryo (\d+)\/(\d+)\*\*/.exec(questionText || "");
+    const k = m ? parseInt(m[1], 10) : 1;
+    return CS_STAGE1_WEIGHT + Math.min(k, CS_META_SENARYO_SAYISI);
+  }
+  if (asama === 3) {
+    const m = /\*\*Derinleme Sorusu (\d+)\/(\d+)\*\*/.exec(questionText || "");
+    const k = m ? parseInt(m[1], 10) : 1;
+    return CS_STAGE1_WEIGHT + CS_META_SENARYO_SAYISI + Math.min(k, CS_DERINLEME_SAYISI);
+  }
+  if (asama >= 4) return CS_TOTAL_STEPS;
+  return CS_STAGE1_WEIGHT; // asama 1
+}
+
 function Chatbot({ c }) {
-  const [messages, setMessages] = useState([{ role: "assistant", content: c.greeting }]);
+  const lang = (typeof localStorage !== "undefined" && localStorage.getItem("cp_lang")) === "en" ? "en" : "tr";
+  const L = lang === "en"
+    ? { back: "Back", question: (a, b) => `Question ${a} / ${b}` }
+    : { back: "Geri", question: (a, b) => `Soru ${a} / ${b}` };
+
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [showStarters, setShowStarters] = useState(true);
   const [done, setDone] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  // Su an cevap beklenen soru: { question, asama }
+  const [currentStep, setCurrentStep] = useState({ question: c.greeting, asama: 1 });
+  // Cevaplanmis adimlar: { question, answer, tokenBefore, tokenAfter, asama }
+  // tokenBefore, bu adimdan ONCEKI sifrelenmis oturum durumudur; geri donup
+  // cevabi degistirince sunucuya tam olarak bu token gonderilir ve akis o
+  // noktadan itibaren (mevcut dallanma mantigi bozulmadan) yeniden hesaplanir.
+  const [steps, setSteps] = useState([]);
+  const [finalReport, setFinalReport] = useState(null);
+
   const scrollRef = useRef(null);
   const taRef = useRef(null);
-  // Sifrelenmis oturum token'i (sunucu stateless; degerlendirme durumunu tasir)
+  // Sunucudan donen en guncel (ileri) sifrelenmis oturum token'i
   const sessionRef = useRef(null);
+
+  // Gorunen mesaj listesi: gecmis adimlar + su anki soru (veya final rapor) + varsa hata
+  const messages = [];
+  steps.forEach((s) => {
+    messages.push({ role: "assistant", content: s.question });
+    messages.push({ role: "user", content: s.answer });
+  });
+  if (done && finalReport) {
+    messages.push({ role: "assistant", content: finalReport });
+  } else if (currentStep) {
+    messages.push({ role: "assistant", content: currentStep.question });
+  }
+  if (errorMsg) messages.push({ role: "assistant", content: errorMsg });
+
+  const progressCurrent = done ? CS_TOTAL_STEPS : csProgressCurrent(currentStep ? currentStep.asama : 1, currentStep ? currentStep.question : "");
+  const progressPct = Math.round((progressCurrent / CS_TOTAL_STEPS) * 100);
+  const backDisabled = busy || steps.length === 0;
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, busy]);
+  }, [steps.length, busy, done, errorMsg]);
 
   // reset greeting + oturum when language changes
   useEffect(() => {
-    setMessages([{ role: "assistant", content: c.greeting }]);
+    setCurrentStep({ question: c.greeting, asama: 1 });
+    setSteps([]);
     setShowStarters(true);
     setDone(false);
+    setFinalReport(null);
+    setErrorMsg(null);
+    setInput("");
     sessionRef.current = null;
   }, [c.greeting]);
 
   async function send(text) {
     const q = (text ?? input).trim();
-    if (!q || busy || done) return;
+    if (!q || busy || done || !currentStep) return;
     setShowStarters(false);
-    setMessages((m) => [...m, { role: "user", content: q }]);
+    setErrorMsg(null);
     setInput("");
     setBusy(true);
+
+    const tokenBefore = sessionRef.current;
+    const answeredStep = currentStep;
 
     try {
       const response = await fetch("/api/assessment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: q, session: sessionRef.current }),
+        body: JSON.stringify({ message: q, session: tokenBefore }),
       });
 
       if (!response.ok) {
@@ -83,19 +146,45 @@ function Chatbot({ c }) {
       const replyText = data.reply || c.error;
 
       // Sunucudan donen guncel oturum token'ini sakla
-      if (data.session) sessionRef.current = data.session;
-      if (data.done) setDone(true);
+      sessionRef.current = data.session || null;
 
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: replyText, asama: data.asama },
+      // Bu adimi (soru + cevap + onceki/sonraki token) gecmise ekle;
+      // boylece "geri" ile buraya donulebilir.
+      setSteps((prev) => [
+        ...prev,
+        { question: answeredStep.question, answer: q, tokenBefore, tokenAfter: sessionRef.current, asama: answeredStep.asama },
       ]);
+
+      if (data.done) {
+        setDone(true);
+        setFinalReport(replyText);
+        setCurrentStep(null);
+      } else {
+        setCurrentStep({ question: replyText, asama: data.asama });
+      }
     } catch (e) {
       console.error("[CHAT ERROR]", e.message);
-      setMessages((m) => [...m, { role: "assistant", content: c.error }]);
+      setErrorMsg(c.error);
+      setInput(q);
     } finally {
       setBusy(false);
     }
+  }
+
+  function goBack() {
+    if (backDisabled) return;
+    const last = steps[steps.length - 1];
+    const next = steps.slice(0, -1);
+    setSteps(next);
+    // Sunucu durumunu bu adimdan ONCEKI token'a al; bir sonraki gonderim
+    // sanki o soru hic cevaplanmamis gibi yeniden islenir.
+    sessionRef.current = last.tokenBefore;
+    setCurrentStep({ question: last.question, asama: last.asama });
+    setInput(last.answer);
+    setDone(false);
+    setFinalReport(null);
+    setErrorMsg(null);
+    if (next.length === 0) setShowStarters(true);
   }
 
   function onKey(e) {
@@ -121,6 +210,30 @@ function Chatbot({ c }) {
         <span className="chat-live"><Icon name="bolt" size={13} /> AI</span>
       </div>
 
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: "1px solid var(--line)", background: "rgba(255,255,255,0.02)" }}>
+        <button
+          onClick={goBack}
+          disabled={backDisabled}
+          aria-label={L.back}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 5, flex: "0 0 auto",
+            background: "transparent", border: "1px solid var(--line)", color: "var(--muted)",
+            borderRadius: 999, padding: "5px 10px", fontSize: 12, fontWeight: 600,
+            opacity: backDisabled ? 0.4 : 1, cursor: backDisabled ? "default" : "pointer",
+          }}
+        >
+          <Icon name="back" size={13} /> {L.back}
+        </button>
+
+        <div style={{ flex: 1, height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: progressPct + "%", background: "var(--accent)", borderRadius: 999, transition: "width .25s ease" }}></div>
+        </div>
+
+        <span style={{ fontSize: 11.5, color: "var(--faint)", fontWeight: 600, flex: "0 0 auto", whiteSpace: "nowrap" }}>
+          {L.question(progressCurrent, CS_TOTAL_STEPS)}
+        </span>
+      </div>
+
       <div className="chat-body" ref={scrollRef}>
         {messages.map((m, i) => (
           <div key={i} className={"msg " + m.role}>
@@ -136,7 +249,7 @@ function Chatbot({ c }) {
             <div className="bubble typing"><i></i><i></i><i></i></div>
           </div>
         )}
-        {showStarters && !busy && (
+        {showStarters && !busy && steps.length === 0 && (
           <div className="starters">
             {c.starters.map((s, i) => (
               <button key={i} className="starter" onClick={() => send(s)}>{s}</button>

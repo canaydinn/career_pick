@@ -71,6 +71,8 @@
 .cs-back:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
 .cs-back:disabled { opacity: .35; cursor: default; }
 .cs-progress { font-size: 13px; color: var(--faint); font-weight: 600; min-width: 78px; text-align: right; }
+.cs-progress-track { height: 5px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; margin: 0 0 18px; }
+.cs-progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .25s ease; }
 
 .cs-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; padding: 12px 2px 24px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .cs-body::-webkit-scrollbar { width: 6px; }
