@@ -52,35 +52,70 @@ function KariyerSohbet() {
   const S = CP_SOHBET[lang];
   const N = S.questions.length;
 
-  const initMsgs = () => [
-    { role: "assistant", content: S.greeting },
-    { role: "assistant", content: S.questions[0].q, qIndex: 0 },
-  ];
-
-  const [msgs, setMsgs] = useStateK(initMsgs);
-  const [answers, setAnswers] = useStateK([]);
-  const [step, setStep] = useStateK(0);            // su an sorulan soru indeksi
+  const [answers, setAnswers] = useStateK([]);      // answers[i] = i. soruya verilen kesinlesmis cevap
+  const [step, setStep] = useStateK(0);             // kac soru kesinlesti (siradaki soru = step)
   const [input, setInput] = useStateK("");
   const [busy, setBusy] = useStateK(false);
   const [phase, setPhase] = useStateK("asking");    // "asking" | "result"
+  const [editingIndex, setEditingIndex] = useStateK(null); // duzenlenmekte olan gecmis soru indeksi
+  const [followup, setFollowup] = useStateK(null);  // { forIndex, text } - yetersiz cevap sonrasi derinleme sorusu
+  const [recomputing, setRecomputing] = useStateK(false); // sonuc ekranindayken bir cevap duzenlendiginde onerileri yeniden hesaplama
   const [recs, setRecs] = useStateK([]);
   const [selected, setSelected] = useStateK(() => ProfileStore.getAll());
 
   const bodyRef = useRefK(null);
   const taRef = useRefK(null);
 
+  const questionText = (i) => (S.questions[i] ? S.questions[i].q : "");
+
+  // Gorunen mesaj listesi her zaman answers/step/editingIndex durumundan turetilir;
+  // boylece "geri" veya "duzenle" hicbir zaman gecmis cevaplari silmez.
+  function buildMessages() {
+    const arr = [{ key: "greeting", role: "assistant", content: S.greeting }];
+    for (let i = 0; i < step; i++) {
+      if (editingIndex === i) {
+        arr.push({
+          key: "editq" + i,
+          role: "assistant",
+          content: (followup && followup.forIndex === i) ? followup.text : questionText(i),
+          isEditing: true,
+        });
+      } else {
+        arr.push({ key: "q" + i, role: "assistant", content: questionText(i) });
+        arr.push({ key: "a" + i, role: "user", content: answers[i], editableIndex: i });
+      }
+    }
+    if (editingIndex === null) {
+      if (recomputing) {
+        arr.push({ key: "thinking2", role: "assistant", content: S.thinking });
+      } else if (phase === "asking") {
+        if (step < N) {
+          arr.push({
+            key: "curq",
+            role: "assistant",
+            content: (followup && followup.forIndex === step) ? followup.text : questionText(step),
+          });
+        } else {
+          arr.push({ key: "thinking", role: "assistant", content: S.thinking });
+        }
+      }
+    }
+    return arr;
+  }
+  const msgs = buildMessages();
+  const showChatUI = phase === "asking" || editingIndex !== null || recomputing;
+
   useEffectK(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [msgs, busy, phase]);
+  }, [msgs.length, busy, showChatUI]);
 
-  // Input, geri donup onceki cevabi geri doldururken de otomatik boyutlansin
+  // Input, gecmis bir cevabi duzenlemek uzere geri doldururken de otomatik boyutlansin
   useEffectK(() => {
     if (taRef.current) autosize(taRef.current);
   }, [input]);
 
-  const questionText = (i) => (S.questions[i] ? S.questions[i].q : "");
   // Tamamlanan soru sayisina gore ilerleme yuzdesi (sonuc ekraninda %100)
-  const progressPct = phase === "result" ? 100 : Math.round((step / N) * 100);
+  const progressPct = (phase === "result" && editingIndex === null && !recomputing) ? 100 : Math.round((step / N) * 100);
 
   function buildCevaplar(arr) {
     return S.questions.map((qq, i) => ({ soru: qq.q, key: qq.key, cevap: arr[i] || "" }));
@@ -100,61 +135,65 @@ function KariyerSohbet() {
 
   async function submit(text) {
     const q = (text ?? input).trim();
-    if (!q || busy || phase === "result") return;
-    const cur = step;
+    if (!q || busy) return;
+    const idx = editingIndex !== null ? editingIndex : step;
+    if (idx >= N) return;
     setInput("");
     if (taRef.current) taRef.current.style.height = "auto";
-    setMsgs((m) => [...m, { role: "user", content: q }]);
     setBusy(true);
 
     try {
-      const ev = await apiDegerlendir(questionText(cur), q);
+      const ev = await apiDegerlendir(questionText(idx), q);
       if (ev && ev.sufficient === false) {
-        setMsgs((m) => [...m, { role: "assistant", content: ev.followup || questionText(cur), qIndex: cur, followup: true }]);
+        setFollowup({ forIndex: idx, text: ev.followup || questionText(idx) });
       } else {
-        const newAnswers = answers.slice(0, cur);
-        newAnswers[cur] = q;
+        const newAnswers = answers.slice();
+        newAnswers[idx] = q;
         setAnswers(newAnswers);
-        const nextStep = cur + 1;
-        setStep(nextStep);
-        if (nextStep >= N) {
-          setMsgs((m) => [...m, { role: "assistant", content: S.thinking }]);
-          await runRecommend(newAnswers);
+        setFollowup(null);
+        if (editingIndex !== null) {
+          // Gecmis bir cevap duzenlendi; sonraki cevaplar hic dokunulmadan kalir.
+          setEditingIndex(null);
+          if (phase === "result") {
+            setRecomputing(true);
+            await runRecommend(newAnswers);
+            setRecomputing(false);
+          }
         } else {
-          setMsgs((m) => [...m, { role: "assistant", content: questionText(nextStep), qIndex: nextStep }]);
+          const nextStep = idx + 1;
+          setStep(nextStep);
+          if (nextStep >= N) {
+            await runRecommend(newAnswers);
+          }
         }
       }
     } catch (e) {
       console.error("[SOHBET] evaluate:", e.message);
-      setMsgs((m) => [...m, { role: "assistant", content: S.error }]);
+      setFollowup({ forIndex: idx, text: S.error });
     } finally {
       setBusy(false);
     }
   }
 
-  function reaskTo(target) {
-    // Bu soruya daha once verilmis bir cevap varsa, duzenlemek uzere input'a geri doldur
-    const previousAnswer = answers[target] || "";
-    setMsgs((prev) => {
-      const idx = prev.findIndex((m) => m.qIndex === target);
-      const cut = idx >= 0 ? prev.slice(0, idx) : prev;
-      return [...cut, { role: "assistant", content: questionText(target), qIndex: target }];
-    });
-    setAnswers((a) => a.slice(0, target));
-    setStep(target);
-    setInput(previousAnswer);
+  function startEdit(i) {
+    if (busy || i < 0 || i >= step) return;
+    setEditingIndex(i);
+    setFollowup(null);
+    setInput(answers[i] || "");
   }
 
-  function goBack() {
+  function cancelEdit() {
     if (busy) return;
-    if (phase === "result") {
-      setRecs([]);
-      setPhase("asking");
-      reaskTo(N - 1);
-      return;
-    }
-    if (step <= 0) return;
-    reaskTo(step - 1);
+    setEditingIndex(null);
+    setFollowup(null);
+    setInput("");
+  }
+
+  // Ust bardaki "Geri" kisayolu: en son cevaplanan soruyu duzenlemeye ac.
+  // Herhangi bir onceki soruyu duzenlemek icin o cevabin yanindaki kalem ikonu kullanilabilir.
+  function goBack() {
+    if (busy || step <= 0) return;
+    startEdit(step - 1);
   }
 
   function onAdd(rec) {
@@ -168,9 +207,11 @@ function KariyerSohbet() {
   }
 
   function restart() {
-    setMsgs(initMsgs());
     setAnswers([]);
     setStep(0);
+    setEditingIndex(null);
+    setFollowup(null);
+    setRecomputing(false);
     setRecs([]);
     setPhase("asking");
     setInput("");
@@ -184,7 +225,8 @@ function KariyerSohbet() {
     el.style.height = Math.min(el.scrollHeight, 140) + "px";
   }
 
-  const backDisabled = busy || (phase === "asking" && step === 0);
+  const isEditing = editingIndex !== null;
+  const backDisabled = busy || (isEditing ? false : step === 0);
 
   return (
     <div className="cs-page">
@@ -194,12 +236,18 @@ function KariyerSohbet() {
 
       <div className="cs-shell">
         <div className="cs-head">
-          <button className="cs-back" onClick={goBack} disabled={backDisabled}>
-            <IcK name="back" size={16} /> {S.back}
-          </button>
+          {isEditing ? (
+            <button className="cs-back" onClick={cancelEdit} disabled={busy}>
+              <IcK name="close" size={16} /> {S.cancelEdit}
+            </button>
+          ) : (
+            <button className="cs-back" onClick={goBack} disabled={backDisabled}>
+              <IcK name="back" size={16} /> {S.back}
+            </button>
+          )}
           <div className="cs-title">{S.headerTitle}</div>
           <div className="cs-progress">
-            {phase === "asking" ? S.progress(Math.min(step + 1, N), N) : `${N} / ${N}`}
+            {isEditing ? S.editingBadge(editingIndex + 1, N) : (showChatUI ? S.progress(Math.min(step + 1, N), N) : `${N} / ${N}`)}
           </div>
         </div>
 
@@ -207,12 +255,23 @@ function KariyerSohbet() {
           <div className="cs-progress-fill" style={{ width: progressPct + "%" }}></div>
         </div>
 
-        {phase === "asking" ? (
+        {showChatUI ? (
           <React.Fragment>
             <div className="cs-body" ref={bodyRef}>
-              {msgs.map((m, i) => (
-                <div className={"cs-msg " + m.role} key={i}>
+              {msgs.map((m) => (
+                <div className={"cs-msg " + m.role + (m.isEditing ? " cs-editing" : "")} key={m.key}>
                   <div className="cs-bubble">{m.content}</div>
+                  {m.role === "user" && typeof m.editableIndex === "number" && !isEditing && !busy && (
+                    <button
+                      type="button"
+                      className="cs-edit-btn"
+                      onClick={() => startEdit(m.editableIndex)}
+                      aria-label={S.editAnswer}
+                      title={S.editAnswer}
+                    >
+                      <IcK name="edit" size={13} />
+                    </button>
+                  )}
                 </div>
               ))}
               {busy && (
@@ -268,6 +327,31 @@ function KariyerSohbet() {
                 })}
               </div>
             )}
+
+            <div className="cs-answers-review">
+              <h3>{S.result.answersTitle}</h3>
+              <p className="cs-answers-hint">{S.result.answersHint}</p>
+              <ul className="cs-answers-list">
+                {S.questions.map((qq, i) => (
+                  <li className="cs-answer-item" key={i}>
+                    <div className="cs-answer-text">
+                      <div className="cs-answer-q">{qq.q}</div>
+                      <div className="cs-answer-a">{answers[i]}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="cs-edit-btn cs-edit-btn-inline"
+                      onClick={() => startEdit(i)}
+                      disabled={busy}
+                      aria-label={S.editAnswer}
+                      title={S.editAnswer}
+                    >
+                      <IcK name="edit" size={13} /> {S.editAnswer}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
             <div className="cs-actions">
               <button className="cs-restart" onClick={restart}>{S.result.restart}</button>

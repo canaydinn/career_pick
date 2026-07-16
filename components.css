@@ -77,12 +77,16 @@
 .cs-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; padding: 12px 2px 24px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .cs-body::-webkit-scrollbar { width: 6px; }
 .cs-body::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
-.cs-msg { display: flex; }
+.cs-msg { display: flex; align-items: center; gap: 8px; }
 .cs-msg.user { justify-content: flex-end; }
 .cs-msg.assistant { justify-content: flex-start; }
 .cs-bubble { font-size: 15.5px; line-height: 1.6; max-width: 88%; white-space: pre-wrap; word-break: break-word; }
 .cs-msg.user .cs-bubble { background: var(--surface-2); border: 1px solid var(--line); border-radius: 16px; padding: 12px 16px; }
 .cs-msg.assistant .cs-bubble { color: var(--text); }
+.cs-msg.assistant.cs-editing .cs-bubble { background: rgba(255,255,255,0.04); border: 1px dashed var(--line-strong); border-radius: 14px; padding: 12px 16px; color: var(--text); }
+.cs-edit-btn { flex: 0 0 auto; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--faint); opacity: .55; transition: opacity .15s ease, color .15s ease, border-color .15s ease; }
+.cs-edit-btn:hover:not(:disabled) { opacity: 1; color: var(--accent); border-color: var(--accent); }
+.cs-edit-btn:disabled { opacity: .2; cursor: default; }
 .cs-typing { display: inline-flex; gap: 5px; align-items: center; }
 .cs-typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: bounce 1.2s infinite; }
 .cs-typing i:nth-child(2) { animation-delay: .15s; } .cs-typing i:nth-child(3) { animation-delay: .3s; }
@@ -114,6 +118,16 @@
 .cs-actions { display: flex; justify-content: center; margin-top: 28px; }
 .cs-restart { background: transparent; border: 1px solid var(--line-strong); color: var(--text); padding: 11px 22px; border-radius: 999px; font-weight: 600; transition: border-color .15s ease; }
 .cs-restart:hover { border-color: var(--accent); }
+
+.cs-answers-review { margin-top: 36px; border-top: 1px solid var(--line); padding-top: 26px; }
+.cs-answers-review h3 { font-family: var(--font-display); font-size: 18px; margin: 0 0 6px; }
+.cs-answers-hint { color: var(--faint); font-size: 13px; margin: 0 0 16px; }
+.cs-answers-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.cs-answer-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; }
+.cs-answer-text { min-width: 0; }
+.cs-answer-q { font-size: 12.5px; color: var(--faint); font-weight: 600; margin-bottom: 3px; }
+.cs-answer-a { font-size: 14px; color: var(--text); line-height: 1.5; }
+.cs-edit-btn-inline { flex: 0 0 auto; width: auto; height: auto; border-radius: 999px; padding: 7px 13px; gap: 6px; font-size: 12.5px; font-weight: 600; opacity: .85; }
 
 .cs-profile { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 26px; }
 .cs-profile h3 { font-family: var(--font-display); font-size: 18px; margin: 0 0 14px; }

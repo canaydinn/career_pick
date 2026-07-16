@@ -17,6 +17,8 @@ function Icon({ name, size = 24, stroke = 1.7 }) {
     case "check": return (<svg {...p}><path d="M5 12l4.5 4.5L19 7"/></svg>);
     case "bolt": return (<svg {...p}><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>);
     case "globe": return (<svg {...p}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>);
+    case "edit": return (<svg {...p}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>);
+    case "close": return (<svg {...p}><path d="M18 6L6 18M6 6l12 12"/></svg>);
     default: return null;
   }
 }
