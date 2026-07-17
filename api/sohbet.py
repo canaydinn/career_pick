@@ -315,6 +315,62 @@ def _varsayilan_puanlar(senaryolar):
     } for s in senaryolar]
 
 
+def _yetkinlik_arama_terimi(ad):
+    """'2. Vizyoner Liderlik (X)' -> 'Vizyoner Liderlik' — embedding'i bozmasin."""
+    t = (ad or "").strip()
+    t = re.sub(r"^\d+\.\s*", "", t)
+    t = re.sub(r"\(.*?\)", "", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def _cevap_by_key(cevaplar, key):
+    for c in cevaplar or []:
+        if (c.get("key") or "") == key:
+            return (c.get("cevap") or "").strip()
+    return ""
+
+
+def _kurslari_kartlara(kurslar, gerekce_varsayilan, limit=5):
+    kartlar = []
+    for k in kurslar:
+        ad = (k.get("ad") or "").strip()
+        if not ad:
+            continue
+        kartlar.append({
+            "ad": ad,
+            "kurum": k.get("kurum") or "",
+            "aciklama": (k.get("kategori") or "Profiline uygun egitim adayi.").strip(),
+            "sure": "",
+            "gerekce": gerekce_varsayilan,
+            "link": k.get("link") or "",
+        })
+        if len(kartlar) >= limit:
+            break
+    return kartlar
+
+
+def _json_obj_bul(txt):
+    """Claude yanitindan ilk JSON nesnesini cek (markdown fence dahil)."""
+    if not txt:
+        return None
+    cleaned = re.sub(r"```(?:json)?\s*", "", txt).replace("```", "").strip()
+    mm = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if not mm:
+        return None
+    try:
+        return json.loads(mm.group())
+    except Exception:
+        # Bazen trailing virgul / kirpik JSON; recommendations dizisini elle al
+        m2 = re.search(r'"recommendations"\s*:\s*(\[[\s\S]*?\])\s*[,}]', cleaned)
+        if m2:
+            try:
+                return {"recommendations": json.loads(m2.group(1))}
+            except Exception:
+                return None
+    return None
+
+
 def oner(cevaplar, a, o, q):
     profil = [c for c in cevaplar if (c.get("type") or "profile") != "scenario"]
     senaryolar = [c for c in cevaplar if (c.get("type") or "") == "scenario"]
@@ -325,50 +381,98 @@ def oner(cevaplar, a, o, q):
         sirali = sorted(yetkinlikler, key=lambda y: y.get("puan", 5))
         eksikler = [y["yetkinlik"] for y in sirali[:2]]
 
-    profil_metin = " ".join((c.get("cevap") or "") for c in (profil or cevaplar)).strip()
-    arama = " ".join(p for p in [profil_metin] + eksikler[:3] if p).strip() or "kariyer egitimi"
+    sektor = _cevap_by_key(cevaplar, "hedef_sektor")
+    hedef = _cevap_by_key(cevaplar, "kariyer_hedefi")
+    beceriler = _cevap_by_key(cevaplar, "mevcut_yetenekler")
+    eksik_terimler = [_yetkinlik_arama_terimi(x) for x in eksikler[:3]]
+    eksik_terimler = [t for t in eksik_terimler if t]
 
-    kurslar = egitim_ara(arama, o, q, limit=10)
+    # Kariyer hedefi once; uzun yetkinlik unvanlari aramayi bozmasin
+    arama = " ".join(
+        p for p in [hedef, sektor, beceriler, " ".join(eksik_terimler[:2]), "egitim sertifika"]
+        if p
+    ).strip() or "kariyer egitimi"
+
+    kurslar = egitim_ara(arama, o, q, limit=12)
+    # Zayif eslesmede hedef odakli ikinci arama
+    if len(kurslar) < 4 and (hedef or sektor):
+        ekstra = egitim_ara(f"{hedef} {sektor} yoneticilik liderlik isletme", o, q, limit=12)
+        gorulen = {(k.get("ad"), k.get("link")) for k in kurslar}
+        for k in ekstra:
+            key = (k.get("ad"), k.get("link"))
+            if key not in gorulen:
+                kurslar.append(k)
+                gorulen.add(key)
+            if len(kurslar) >= 12:
+                break
+
     if not kurslar:
         return [], yetkinlikler
 
-    profil_satirlari = "\n".join(f"- {c.get('soru','')}: {c.get('cevap','')}" for c in cevaplar)
+    fallback = _kurslari_kartlara(
+        kurslar,
+        "Hedef kariyerin ve gelisim alanlarina yakin bulundu.",
+        limit=5,
+    )
+
+    # Claude'a sadece profil ozeti (uzun senaryo metinleri token/JSON'u sisirir)
+    profil_satirlari = "\n".join(
+        f"- {c.get('soru','')}: {c.get('cevap','')}" for c in profil
+    )
     if yetkinlikler:
         y_satir = "\n".join(
-            f"- {y['yetkinlik']}: {y['puan']}/5 ({y['seviye']})"
-            + (f" — {y['yorum']}" if y.get("yorum") else "")
+            f"- {_yetkinlik_arama_terimi(y['yetkinlik']) or y['yetkinlik']}: "
+            f"{y['puan']}/5 ({y['seviye']})"
             for y in yetkinlikler
         )
-        profil_satirlari += f"\n\nYETKINLIK PUANLARI (RAG senaryo olcumu):\n{y_satir}"
-        if eksikler:
-            profil_satirlari += f"\n\nONCELIKLI GELISIM ALANLARI: {', '.join(eksikler)}"
+        profil_satirlari += f"\n\nYETKINLIK PUANLARI:\n{y_satir}"
+        if eksik_terimler:
+            profil_satirlari += f"\n\nONCELIKLI GELISIM ALANLARI: {', '.join(eksik_terimler)}"
 
     kurs_json = json.dumps(kurslar, ensure_ascii=False)
-    sistem = """Sen CareerPick platformunun kariyer danismanisin. Kullanicinin profiline
-VE senaryo tabanli yetkinlik puanlarina gore, SADECE verilen egitim listesinden
-en uygun 4-6 tanesini sec. Listede olmayan egitim UYDURMA.
+    sistem = """Sen CareerPick platformunun kariyer danismanisin.
+Gorevin: SADECE verilen egitim listesinden en uygun 4-6 egitimi secmek.
+Listede olmayan egitim UYDURMA. Bos liste DONME — birebir turizm/otel egitimi
+olmasa bile yoneticilik, liderlik, isletme, iletisim gibi en yakinlarini sec.
 
-Oncelik: hedef kariyer uygunlugu, sonra eksik yetkinlikleri kapatan egitimler.
+Oncelik: 1) hedef kariyer / sektor  2) eksik yetkinlikleri destekleyen egitimler.
 
-Sadece JSON:
-{"recommendations":[{"ad":"...","kurum":"...","aciklama":"<1-2 cumle>","sure":"<tahmini sure>","gerekce":"<neden uygun>","link":"..."}]}"""
+Sadece su JSON'u dondur (baska metin yok):
+{"recommendations":[{"ad":"...","kurum":"...","aciklama":"<1-2 cumle>","sure":"<tahmini sure veya bos>","gerekce":"<neden uygun>","link":"..."}]}"""
     user = f"KULLANICI PROFILI:\n{profil_satirlari}\n\nEGITIM LISTESI (JSON):\n{kurs_json}"
 
-    r = a.messages.create(
-        model=CLAUDE_MODEL, max_tokens=1800, system=sistem,
-        messages=[{"role": "user", "content": user}],
-    )
-    txt = r.content[0].text.strip()
-    mm = re.search(r"\{.*\}", txt, re.DOTALL)
-    if mm:
-        try:
-            d = json.loads(mm.group())
+    try:
+        r = a.messages.create(
+            model=CLAUDE_MODEL, max_tokens=2000, system=sistem,
+            messages=[{"role": "user", "content": user}],
+        )
+        txt = r.content[0].text.strip()
+        d = _json_obj_bul(txt)
+        if d:
             recs = d.get("recommendations", [])
-            if isinstance(recs, list):
-                return recs[:6], yetkinlikler
-        except Exception:
-            pass
-    return [], yetkinlikler
+            if isinstance(recs, list) and recs:
+                temiz = []
+                for item in recs[:6]:
+                    if not isinstance(item, dict):
+                        continue
+                    ad = (item.get("ad") or "").strip()
+                    if not ad:
+                        continue
+                    temiz.append({
+                        "ad": ad,
+                        "kurum": (item.get("kurum") or "").strip(),
+                        "aciklama": (item.get("aciklama") or "").strip(),
+                        "sure": (item.get("sure") or "").strip(),
+                        "gerekce": (item.get("gerekce") or "").strip(),
+                        "link": (item.get("link") or "").strip(),
+                    })
+                if temiz:
+                    return temiz, yetkinlikler
+    except Exception as e:
+        print("[ERROR] oner claude:", repr(e))
+
+    # Claude bos/kirpik donerse RAG sonuclarini kart olarak goster
+    return fallback, yetkinlikler
 
 
 # ── HTTP ───────────────────────────────────────────────────────────────────────
