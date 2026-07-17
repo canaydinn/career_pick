@@ -58,7 +58,8 @@ function KariyerSohbet() {
   const [busy, setBusy] = useStateK(false);
   const [phase, setPhase] = useStateK("asking");    // "asking" | "result"
   const [editingIndex, setEditingIndex] = useStateK(null); // duzenlenmekte olan gecmis soru indeksi
-  const [followup, setFollowup] = useStateK(null);  // { forIndex, text } - yetersiz cevap sonrasi derinleme sorusu
+  const [attempts, setAttempts] = useStateK({});    // { [soruIndex]: [{ q, followupText }] } - yetersiz bulunup elenen onceki yanitlar (kaybolmasinlar, tam gecmis burada tutulur)
+  const [errorMsg, setErrorMsg] = useStateK("");    // gecici ag/istek hatasi mesaji (yetersiz cevaptan ayri tutulur)
   const [recomputing, setRecomputing] = useStateK(false); // sonuc ekranindayken bir cevap duzenlendiginde onerileri yeniden hesaplama
   const [recs, setRecs] = useStateK([]);
   const [selected, setSelected] = useStateK(() => ProfileStore.getAll());
@@ -70,18 +71,25 @@ function KariyerSohbet() {
 
   // Gorunen mesaj listesi her zaman answers/step/editingIndex durumundan turetilir;
   // boylece "geri" veya "duzenle" hicbir zaman gecmis cevaplari silmez.
+  // Yetersiz bulunup elenen onceki denemeler de mesaj listesinde kalsin;
+  // boylece kullanicinin yazdigi hicbir cevap sessizce kaybolmaz.
+  function pushAttempts(arr, i, prefix) {
+    (attempts[i] || []).forEach((att, ai) => {
+      arr.push({ key: prefix + "u" + i + "-" + ai, role: "user", content: att.q });
+      arr.push({ key: prefix + "a" + i + "-" + ai, role: "assistant", content: att.followupText, isFollowup: true });
+    });
+  }
+
   function buildMessages() {
     const arr = [{ key: "greeting", role: "assistant", content: S.greeting }];
     for (let i = 0; i < step; i++) {
       if (editingIndex === i) {
-        arr.push({
-          key: "editq" + i,
-          role: "assistant",
-          content: (followup && followup.forIndex === i) ? followup.text : questionText(i),
-          isEditing: true,
-        });
+        arr.push({ key: "editq" + i, role: "assistant", content: questionText(i), isEditing: true });
+        pushAttempts(arr, i, "editatt");
+        if (errorMsg) arr.push({ key: "editerr" + i, role: "assistant", content: errorMsg, isError: true });
       } else {
         arr.push({ key: "q" + i, role: "assistant", content: questionText(i) });
+        pushAttempts(arr, i, "att");
         arr.push({ key: "a" + i, role: "user", content: answers[i], editableIndex: i });
       }
     }
@@ -90,11 +98,9 @@ function KariyerSohbet() {
         arr.push({ key: "thinking2", role: "assistant", content: S.thinking });
       } else if (phase === "asking") {
         if (step < N) {
-          arr.push({
-            key: "curq",
-            role: "assistant",
-            content: (followup && followup.forIndex === step) ? followup.text : questionText(step),
-          });
+          arr.push({ key: "curq", role: "assistant", content: questionText(step) });
+          pushAttempts(arr, step, "curatt");
+          if (errorMsg) arr.push({ key: "curerr", role: "assistant", content: errorMsg, isError: true });
         } else {
           arr.push({ key: "thinking", role: "assistant", content: S.thinking });
         }
@@ -141,16 +147,21 @@ function KariyerSohbet() {
     setInput("");
     if (taRef.current) taRef.current.style.height = "auto";
     setBusy(true);
+    setErrorMsg("");
 
     try {
       const ev = await apiDegerlendir(questionText(idx), q);
       if (ev && ev.sufficient === false) {
-        setFollowup({ forIndex: idx, text: ev.followup || questionText(idx) });
+        const followupText = ev.followup || questionText(idx);
+        setAttempts((prev) => {
+          const list = prev[idx] ? prev[idx].slice() : [];
+          list.push({ q, followupText });
+          return { ...prev, [idx]: list };
+        });
       } else {
         const newAnswers = answers.slice();
         newAnswers[idx] = q;
         setAnswers(newAnswers);
-        setFollowup(null);
         if (editingIndex !== null) {
           // Gecmis bir cevap duzenlendi; sonraki cevaplar hic dokunulmadan kalir.
           setEditingIndex(null);
@@ -169,7 +180,8 @@ function KariyerSohbet() {
       }
     } catch (e) {
       console.error("[SOHBET] evaluate:", e.message);
-      setFollowup({ forIndex: idx, text: S.error });
+      setInput(q); // cevap kaybolmasin, kullanici tekrar yazmadan yeniden gonderebilsin
+      setErrorMsg(S.error);
     } finally {
       setBusy(false);
     }
@@ -178,14 +190,20 @@ function KariyerSohbet() {
   function startEdit(i) {
     if (busy || i < 0 || i >= step) return;
     setEditingIndex(i);
-    setFollowup(null);
+    setErrorMsg("");
+    setAttempts((prev) => {
+      if (!prev[i]) return prev;
+      const next = { ...prev };
+      delete next[i];
+      return next;
+    });
     setInput(answers[i] || "");
   }
 
   function cancelEdit() {
     if (busy) return;
     setEditingIndex(null);
-    setFollowup(null);
+    setErrorMsg("");
     setInput("");
   }
 
@@ -210,7 +228,8 @@ function KariyerSohbet() {
     setAnswers([]);
     setStep(0);
     setEditingIndex(null);
-    setFollowup(null);
+    setErrorMsg("");
+    setAttempts({});
     setRecomputing(false);
     setRecs([]);
     setPhase("asking");
@@ -259,19 +278,22 @@ function KariyerSohbet() {
           <React.Fragment>
             <div className="cs-body" ref={bodyRef}>
               {msgs.map((m) => (
-                <div className={"cs-msg " + m.role + (m.isEditing ? " cs-editing" : "")} key={m.key}>
-                  <div className="cs-bubble">{m.content}</div>
-                  {m.role === "user" && typeof m.editableIndex === "number" && !isEditing && !busy && (
-                    <button
-                      type="button"
-                      className="cs-edit-btn"
-                      onClick={() => startEdit(m.editableIndex)}
-                      aria-label={S.editAnswer}
-                      title={S.editAnswer}
-                    >
-                      <IcK name="edit" size={13} />
-                    </button>
-                  )}
+                <div className={"cs-msg-group " + m.role} key={m.key}>
+                  {m.isFollowup && <div className="cs-followup-tag">{S.followupTag}</div>}
+                  <div className={"cs-msg " + m.role + (m.isEditing ? " cs-editing" : "") + (m.isFollowup ? " cs-followup" : "") + (m.isError ? " cs-error" : "")}>
+                    <div className="cs-bubble">{m.content}</div>
+                    {m.role === "user" && typeof m.editableIndex === "number" && !isEditing && !busy && (
+                      <button
+                        type="button"
+                        className="cs-edit-btn"
+                        onClick={() => startEdit(m.editableIndex)}
+                        aria-label={S.editAnswer}
+                        title={S.editAnswer}
+                      >
+                        <IcK name="edit" size={13} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
               {busy && (
