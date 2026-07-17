@@ -2,9 +2,10 @@
 const { useState: useStateK, useEffect: useEffectK, useRef: useRefK } = React;
 const IcK = window.CPIcon;
 const LogoK = window.CPLogo;
+const MAX_FOLLOWUPS = 1;
 
-/* ---------- Backend cagrilari (ileride degistirilebilir sekilde izole) ---------- */
-async function apiDegerlendir(soru, cevap, meta) {
+/* ---------- Backend cagrilari ---------- */
+async function apiDegerlendir(soru, cevap, meta, attempt) {
   const r = await fetch("/api/sohbet", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -14,10 +15,20 @@ async function apiDegerlendir(soru, cevap, meta) {
       cevap,
       type: (meta && meta.type) || "profile",
       yetkinlik: (meta && meta.yetkinlik) || "",
+      attempt: attempt || 0,
     }),
   });
   if (!r.ok) throw new Error("evaluate");
-  return r.json(); // { sufficient, followup }
+  return r.json();
+}
+async function apiSenaryolar(cevaplar) {
+  const r = await fetch("/api/sohbet", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "scenarios", cevaplar }),
+  });
+  if (!r.ok) throw new Error("scenarios");
+  return r.json(); // { questions, meslek }
 }
 async function apiOner(cevaplar) {
   const r = await fetch("/api/sohbet", {
@@ -26,10 +37,10 @@ async function apiOner(cevaplar) {
     body: JSON.stringify({ action: "recommend", cevaplar }),
   });
   if (!r.ok) throw new Error("recommend");
-  return r.json(); // { recommendations, yetkinlikler }
+  return r.json();
 }
 
-/* ---------- Profil deposu (localStorage; backend'e tasinabilir) ---------- */
+/* ---------- Profil deposu ---------- */
 const PROFILE_KEY = "cp_selected_egitimler";
 const ProfileStore = {
   getAll() {
@@ -56,29 +67,45 @@ const ProfileStore = {
 function KariyerSohbet() {
   const lang = (typeof localStorage !== "undefined" && localStorage.getItem("cp_lang")) === "en" ? "en" : "tr";
   const S = CP_SOHBET[lang];
-  const N = S.questions.length;
+  const PROFILE_N = S.questions.length;
+  const EXPECTED_SCENARIOS = S.scenarioCount || 5;
 
-  const [answers, setAnswers] = useStateK([]);      // answers[i] = i. soruya verilen kesinlesmis cevap
-  const [step, setStep] = useStateK(0);             // kac soru kesinlesti (siradaki soru = step)
+  const [scenarioQs, setScenarioQs] = useStateK([]); // RAG'den gelen senaryolar
+  const [scenariosReady, setScenariosReady] = useStateK(false);
+  const [loadingScenarios, setLoadingScenarios] = useStateK(false);
+
+  const questions = S.questions.concat(scenarioQs);
+  const N = questions.length;
+
+  const [answers, setAnswers] = useStateK([]);
+  const [step, setStep] = useStateK(0);
   const [input, setInput] = useStateK("");
   const [busy, setBusy] = useStateK(false);
-  const [phase, setPhase] = useStateK("asking");    // "asking" | "result"
-  const [editingIndex, setEditingIndex] = useStateK(null); // duzenlenmekte olan gecmis soru indeksi
-  const [attempts, setAttempts] = useStateK({});    // { [soruIndex]: [{ q, followupText }] }
+  const [phase, setPhase] = useStateK("asking");
+  const [editingIndex, setEditingIndex] = useStateK(null);
+  const [attempts, setAttempts] = useStateK({});
   const [errorMsg, setErrorMsg] = useStateK("");
   const [recomputing, setRecomputing] = useStateK(false);
   const [recs, setRecs] = useStateK([]);
-  const [skills, setSkills] = useStateK([]);        // senaryo yetkinlik ozeti
+  const [skills, setSkills] = useStateK([]);
   const [selected, setSelected] = useStateK(() => ProfileStore.getAll());
 
   const bodyRef = useRefK(null);
   const taRef = useRefK(null);
 
-  const qMeta = (i) => S.questions[i] || null;
-  const questionText = (i) => (S.questions[i] ? S.questions[i].q : "");
-  const isScenario = (i) => !!(S.questions[i] && S.questions[i].type === "scenario");
+  const qMeta = (i) => questions[i] || null;
+  const questionText = (i) => (questions[i] ? questions[i].q : "");
+  const isScenario = (i) => !!(questions[i] && questions[i].type === "scenario");
   const activeIndex = editingIndex !== null ? editingIndex : step;
   const activePlaceholder = (qMeta(activeIndex) && qMeta(activeIndex).placeholder) || S.placeholder;
+
+  // Profil bitince senaryolar henuz gelmediyse tahmini toplam; sonra gercek N
+  const progressTotal = scenariosReady
+    ? Math.max(N, PROFILE_N)
+    : PROFILE_N + EXPECTED_SCENARIOS;
+  const progressCurrent = (phase === "result" && editingIndex === null && !recomputing && !loadingScenarios)
+    ? progressTotal
+    : Math.min(step + (editingIndex !== null ? 0 : 1), progressTotal);
 
   function pushAttempts(arr, i, prefix) {
     (attempts[i] || []).forEach((att, ai) => {
@@ -112,10 +139,16 @@ function KariyerSohbet() {
       }
     }
     if (editingIndex === null) {
-      if (recomputing) {
+      if (loadingScenarios) {
+        arr.push({ key: "scintro", role: "assistant", content: S.scenarioIntro });
+        arr.push({ key: "loadsc", role: "assistant", content: S.loadingScenarios });
+      } else if (recomputing) {
         arr.push({ key: "thinking2", role: "assistant", content: S.thinking });
       } else if (phase === "asking") {
         if (step < N) {
+          if (step >= PROFILE_N && scenarioQs.length > 0) {
+            arr.push({ key: "scintro", role: "assistant", content: S.scenarioIntro });
+          }
           pushQuestion(arr, step, "curq");
           pushAttempts(arr, step, "curatt");
           if (errorMsg) arr.push({ key: "curerr", role: "assistant", content: errorMsg, isError: true });
@@ -127,31 +160,53 @@ function KariyerSohbet() {
     return arr;
   }
   const msgs = buildMessages();
-  const showChatUI = phase === "asking" || editingIndex !== null || recomputing;
+  const showChatUI = phase === "asking" || editingIndex !== null || recomputing || loadingScenarios;
 
   useEffectK(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [msgs.length, busy, showChatUI]);
+  }, [msgs.length, busy, showChatUI, loadingScenarios]);
 
   useEffectK(() => {
     if (taRef.current) autosize(taRef.current);
   }, [input]);
 
-  const progressPct = (phase === "result" && editingIndex === null && !recomputing) ? 100 : Math.round((step / N) * 100);
+  const progressPct = (phase === "result" && editingIndex === null && !recomputing && !loadingScenarios)
+    ? 100
+    : Math.round((Math.min(step, progressTotal) / progressTotal) * 100);
 
-  function buildCevaplar(arr) {
-    return S.questions.map((qq, i) => ({
+  function buildCevaplar(arr, qs) {
+    const list = qs || questions;
+    return list.map((qq, i) => ({
       soru: qq.q,
       key: qq.key,
       type: qq.type || "profile",
       yetkinlik: qq.yetkinlik || "",
+      ana_yetkinlik_rubrik: qq.ana_yetkinlik_rubrik || "",
       cevap: arr[i] || "",
     }));
   }
 
-  async function runRecommend(finalAnswers) {
+  async function loadScenarios(profileAnswers) {
+    setLoadingScenarios(true);
     try {
-      const data = await apiOner(buildCevaplar(finalAnswers));
+      const data = await apiSenaryolar(buildCevaplar(profileAnswers, S.questions));
+      const qs = Array.isArray(data.questions) ? data.questions : [];
+      setScenarioQs(qs);
+      setScenariosReady(true);
+      return qs;
+    } catch (e) {
+      console.error("[SOHBET] scenarios:", e.message);
+      setScenarioQs([]);
+      setScenariosReady(true);
+      return [];
+    } finally {
+      setLoadingScenarios(false);
+    }
+  }
+
+  async function runRecommend(finalAnswers, qs) {
+    try {
+      const data = await apiOner(buildCevaplar(finalAnswers, qs || questions));
       setRecs(Array.isArray(data.recommendations) ? data.recommendations : []);
       setSkills(Array.isArray(data.yetkinlikler) ? data.yetkinlikler : []);
     } catch (e) {
@@ -163,11 +218,42 @@ function KariyerSohbet() {
     }
   }
 
+  async function advanceAfterAnswer(newAnswers, idx) {
+    if (editingIndex !== null) {
+      setEditingIndex(null);
+      if (phase === "result") {
+        setRecomputing(true);
+        await runRecommend(newAnswers, S.questions.concat(scenarioQs));
+        setRecomputing(false);
+      }
+      return;
+    }
+
+    const nextStep = idx + 1;
+
+    // Profil sorulari bitti → RAG senaryolarini yukle
+    if (nextStep === PROFILE_N && !scenariosReady) {
+      setStep(nextStep);
+      const qs = await loadScenarios(newAnswers);
+      if (!qs.length) {
+        await runRecommend(newAnswers, S.questions);
+      }
+      return;
+    }
+
+    setStep(nextStep);
+    const total = PROFILE_N + scenarioQs.length;
+    if (scenariosReady && nextStep >= total) {
+      await runRecommend(newAnswers, S.questions.concat(scenarioQs));
+    }
+  }
+
   async function submit(text) {
     const q = (text ?? input).trim();
-    if (!q || busy) return;
+    if (!q || busy || loadingScenarios) return;
     const idx = editingIndex !== null ? editingIndex : step;
     if (idx >= N) return;
+
     setInput("");
     if (taRef.current) taRef.current.style.height = "auto";
     setBusy(true);
@@ -175,9 +261,19 @@ function KariyerSohbet() {
 
     try {
       const meta = qMeta(idx) || {};
-      const ev = await apiDegerlendir(questionText(idx), q, meta);
-      if (ev && ev.sufficient === false) {
-        const followupText = ev.followup || questionText(idx);
+      const prevAttempts = (attempts[idx] || []).length;
+
+      // Bir takipten sonra zorunlu kabul (sonsuz donguyu kes)
+      let sufficient = prevAttempts >= MAX_FOLLOWUPS;
+      let followupText = "";
+
+      if (!sufficient) {
+        const ev = await apiDegerlendir(questionText(idx), q, meta, prevAttempts);
+        sufficient = !(ev && ev.sufficient === false);
+        followupText = (ev && ev.followup) || questionText(idx);
+      }
+
+      if (!sufficient) {
         setAttempts((prev) => {
           const list = prev[idx] ? prev[idx].slice() : [];
           list.push({ q, followupText });
@@ -187,20 +283,7 @@ function KariyerSohbet() {
         const newAnswers = answers.slice();
         newAnswers[idx] = q;
         setAnswers(newAnswers);
-        if (editingIndex !== null) {
-          setEditingIndex(null);
-          if (phase === "result") {
-            setRecomputing(true);
-            await runRecommend(newAnswers);
-            setRecomputing(false);
-          }
-        } else {
-          const nextStep = idx + 1;
-          setStep(nextStep);
-          if (nextStep >= N) {
-            await runRecommend(newAnswers);
-          }
-        }
+        await advanceAfterAnswer(newAnswers, idx);
       }
     } catch (e) {
       console.error("[SOHBET] evaluate:", e.message);
@@ -212,7 +295,7 @@ function KariyerSohbet() {
   }
 
   function startEdit(i) {
-    if (busy || i < 0 || i >= step) return;
+    if (busy || loadingScenarios || i < 0 || i >= step) return;
     setEditingIndex(i);
     setErrorMsg("");
     setAttempts((prev) => {
@@ -232,7 +315,7 @@ function KariyerSohbet() {
   }
 
   function goBack() {
-    if (busy || step <= 0) return;
+    if (busy || loadingScenarios || step <= 0) return;
     startEdit(step - 1);
   }
 
@@ -255,6 +338,9 @@ function KariyerSohbet() {
     setRecomputing(false);
     setRecs([]);
     setSkills([]);
+    setScenarioQs([]);
+    setScenariosReady(false);
+    setLoadingScenarios(false);
     setPhase("asking");
     setInput("");
   }
@@ -268,7 +354,10 @@ function KariyerSohbet() {
   }
 
   const isEditing = editingIndex !== null;
-  const backDisabled = busy || (isEditing ? false : step === 0);
+  const backDisabled = busy || loadingScenarios || (isEditing ? false : step === 0);
+  const displayProgress = isEditing
+    ? S.editingBadge(editingIndex + 1, progressTotal)
+    : (showChatUI ? S.progress(Math.min(progressCurrent, progressTotal), progressTotal) : `${progressTotal} / ${progressTotal}`);
 
   return (
     <div className="cs-page">
@@ -288,9 +377,7 @@ function KariyerSohbet() {
             </button>
           )}
           <div className="cs-title">{S.headerTitle}</div>
-          <div className="cs-progress">
-            {isEditing ? S.editingBadge(editingIndex + 1, N) : (showChatUI ? S.progress(Math.min(step + 1, N), N) : `${N} / ${N}`)}
-          </div>
+          <div className="cs-progress">{displayProgress}</div>
         </div>
 
         <div className="cs-progress-track">
@@ -324,7 +411,7 @@ function KariyerSohbet() {
                   </div>
                 </div>
               ))}
-              {busy && (
+              {(busy || loadingScenarios) && (
                 <div className="cs-msg assistant">
                   <div className="cs-bubble"><span className="cs-typing"><i></i><i></i><i></i></span></div>
                 </div>
@@ -338,11 +425,11 @@ function KariyerSohbet() {
                   rows={1}
                   value={input}
                   placeholder={activePlaceholder}
-                  disabled={busy}
+                  disabled={busy || loadingScenarios}
                   onChange={(e) => { setInput(e.target.value); autosize(e.target); }}
                   onKeyDown={onKey}
                 />
-                <button className="cs-send" onClick={() => submit()} disabled={busy || !input.trim()} aria-label="Send">
+                <button className="cs-send" onClick={() => submit()} disabled={busy || loadingScenarios || !input.trim()} aria-label="Send">
                   <IcK name="send" size={18} />
                 </button>
               </div>
@@ -404,8 +491,8 @@ function KariyerSohbet() {
               <h3>{S.result.answersTitle}</h3>
               <p className="cs-answers-hint">{S.result.answersHint}</p>
               <ul className="cs-answers-list">
-                {S.questions.map((qq, i) => (
-                  <li className="cs-answer-item" key={i}>
+                {questions.map((qq, i) => (
+                  <li className="cs-answer-item" key={qq.key || i}>
                     <div className="cs-answer-text">
                       {qq.type === "scenario" && (
                         <div className="cs-answer-skill">{S.scenarioTag}{qq.yetkinlik ? ` · ${qq.yetkinlik}` : ""}</div>

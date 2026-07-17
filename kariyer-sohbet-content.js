@@ -1,4 +1,5 @@
-/* Kariyer Sohbeti — icerik (sorular + arayuz metinleri) */
+/* Kariyer Sohbeti — icerik (profil sorulari + arayuz metinleri)
+   Senaryo sorulari RAG'den (careerpick / meta_senaryo) dinamik gelir. */
 window.CP_SOHBET = {
   tr: {
     brand: "Career Pick",
@@ -10,61 +11,19 @@ window.CP_SOHBET = {
     followupTag: "Aynı soruya ek detay istiyorum",
     scenarioTag: "Yetkinlik senaryosu",
     greeting: "Merhaba! Sana en uygun eğitimleri önerebilmem için önce kariyer profilini, ardından senaryolar üzerinden birkaç yetkinliğini ölçmek istiyorum. Hazırsan başlayalım.",
+    loadingScenarios: "Profiline uygun yetkinlik senaryolarını hazırlıyorum…",
+    scenarioIntro: "Şimdi birkaç kısa iş senaryosu soracağım. Her birinde ilk eylemini ve nedenini yazman yeterli.",
     placeholder: "Yanıtını yaz…",
     thinking: "Yanıtlarını ve yetkinliklerini değerlendirip eğitimleri hazırlıyorum…",
     error: "Bir sorun oluştu, tekrar dener misin?",
     progress: (a, b) => `Soru ${a} / ${b}`,
+    scenarioCount: 5,
     questions: [
-      /* —— Profil sorulari —— */
       { key: "hedef_sektor",      type: "profile",  q: "Hangi sektörde çalışmak istiyorsun?",                          placeholder: "Örn. yazılım, finans, sağlık, inşaat…" },
       { key: "mevcut_yetenekler", type: "profile",  q: "Şu anda hangi beceri ve bilgilere sahipsin?",                  placeholder: "Örn. Excel, Python, iletişim, tasarım…" },
       { key: "deneyim_suresi",    type: "profile",  q: "Bu alanda ne kadar deneyimin var?",                            placeholder: "Örn. yeni başlıyorum, 2 yıl, 5+ yıl…" },
       { key: "kariyer_hedefi",    type: "profile",  q: "Önümüzdeki 1-2 yılda ulaşmak istediğin kariyer hedefin nedir?", placeholder: "Örn. veri analisti olmak, yönetici olmak…" },
       { key: "calisma_sekli",     type: "profile",  q: "Tercih ettiğin çalışma şekli nedir?",                          placeholder: "Örn. uzaktan, ofis, hibrit, serbest…" },
-
-      /* —— Senaryo tabanli yetkinlik olcumu —— */
-      {
-        key: "senaryo_problem_cozme",
-        type: "scenario",
-        yetkinlik: "Problem çözme",
-        q: "Senaryo: Bir proje dosyasında fatura tutarları ile sistemdeki kayıtlar uyuşmuyor; ekip toplantısına 2 saat kaldı. Ne yaparsın? Adım adım anlat.",
-        placeholder: "Örn. önce farkı tespit ederim, kaynakları kontrol ederim, sonra…",
-      },
-      {
-        key: "senaryo_iletisim",
-        type: "scenario",
-        yetkinlik: "İletişim",
-        q: "Senaryo: Yöneticin, senin hazırlamadığın bir rapordaki hatadan dolayı seni sorumlu tutuyor. Toplantıda nasıl yanıt verirsin?",
-        placeholder: "Ne söylerdin ve nasıl bir ton kullanırdın?",
-      },
-      {
-        key: "senaryo_onceliklendirme",
-        type: "scenario",
-        yetkinlik: "Önceliklendirme",
-        q: "Senaryo: Aynı anda üç iş geldi: acil bir müşteri talebi, yarın teslim bir rapor ve haftalık rutin kontrol. Nasıl sıralarsın ve neden?",
-        placeholder: "Sıralamanı ve gerekçeni yaz…",
-      },
-      {
-        key: "senaryo_takim",
-        type: "scenario",
-        yetkinlik: "Takım çalışması",
-        q: "Senaryo: Bir ekip arkadaşın payına düşen işi sürekli geciktiriyor ve senin işini de etkiliyor. Nasıl yaklaşırsın?",
-        placeholder: "İlk adımın ve olası çözümün ne olurdu?",
-      },
-      {
-        key: "senaryo_ogrenme",
-        type: "scenario",
-        yetkinlik: "Öğrenme çevikliği",
-        q: "Senaryo: İşe başladığın ilk hafta hiç bilmediğin bir yazılım / süreç kullanman isteniyor. İlk 48 saatte ne yaparsın?",
-        placeholder: "Nasıl öğrenir ve işe katkı sağlamaya başlarsın?",
-      },
-      {
-        key: "senaryo_analitik",
-        type: "scenario",
-        yetkinlik: "Analitik düşünme",
-        q: "Senaryo: Bir maliyet tablosunda toplamlar doğru görünüyor ama bir kalem şüpheli. Hatayı nasıl bulursun? Hangi kontrolleri yaparsın?",
-        placeholder: "Kontrol adımlarını yaz…",
-      },
     ],
     result: {
       title: "Sana özel eğitim önerileri",
@@ -97,59 +56,19 @@ window.CP_SOHBET = {
     followupTag: "Asking for more detail on the same question",
     scenarioTag: "Competency scenario",
     greeting: "Hi! To recommend the best courses, I'll first learn your career profile, then measure a few competencies through short workplace scenarios. Let's start whenever you're ready.",
+    loadingScenarios: "Preparing competency scenarios matched to your profile…",
+    scenarioIntro: "Next I'll ask a few short workplace scenarios. Just write your first action and why.",
     placeholder: "Type your answer…",
     thinking: "Evaluating your answers and competencies to prepare courses…",
     error: "Something went wrong, want to try again?",
     progress: (a, b) => `Question ${a} / ${b}`,
+    scenarioCount: 5,
     questions: [
       { key: "hedef_sektor",      type: "profile",  q: "Which sector would you like to work in?",                       placeholder: "e.g. software, finance, healthcare, construction…" },
       { key: "mevcut_yetenekler", type: "profile",  q: "What skills and knowledge do you currently have?",              placeholder: "e.g. Excel, Python, communication, design…" },
       { key: "deneyim_suresi",    type: "profile",  q: "How much experience do you have in this field?",                placeholder: "e.g. just starting, 2 years, 5+ years…" },
       { key: "kariyer_hedefi",    type: "profile",  q: "What's your career goal for the next 1-2 years?",               placeholder: "e.g. become a data analyst, become a manager…" },
       { key: "calisma_sekli",     type: "profile",  q: "What's your preferred way of working?",                         placeholder: "e.g. remote, office, hybrid, freelance…" },
-
-      {
-        key: "senaryo_problem_cozme",
-        type: "scenario",
-        yetkinlik: "Problem solving",
-        q: "Scenario: Invoice amounts in a project file don't match the system records, and a team meeting starts in 2 hours. What do you do? Walk through your steps.",
-        placeholder: "e.g. I'd locate the mismatch, check sources, then…",
-      },
-      {
-        key: "senaryo_iletisim",
-        type: "scenario",
-        yetkinlik: "Communication",
-        q: "Scenario: Your manager blames you in a meeting for a mistake in a report you didn't prepare. How do you respond?",
-        placeholder: "What would you say and in what tone?",
-      },
-      {
-        key: "senaryo_onceliklendirme",
-        type: "scenario",
-        yetkinlik: "Prioritization",
-        q: "Scenario: Three tasks arrive at once: an urgent client request, a report due tomorrow, and a weekly routine check. How do you order them and why?",
-        placeholder: "Write your order and reasons…",
-      },
-      {
-        key: "senaryo_takim",
-        type: "scenario",
-        yetkinlik: "Teamwork",
-        q: "Scenario: A teammate keeps delaying their share of work, which blocks yours. How do you handle it?",
-        placeholder: "What's your first step and likely solution?",
-      },
-      {
-        key: "senaryo_ogrenme",
-        type: "scenario",
-        yetkinlik: "Learning agility",
-        q: "Scenario: In your first week you're asked to use software/process you've never seen. What do you do in the first 48 hours?",
-        placeholder: "How would you learn and start contributing?",
-      },
-      {
-        key: "senaryo_analitik",
-        type: "scenario",
-        yetkinlik: "Analytical thinking",
-        q: "Scenario: Totals in a cost sheet look correct, but one line item seems off. How do you find the error? Which checks do you run?",
-        placeholder: "List your verification steps…",
-      },
     ],
     result: {
       title: "Courses picked for you",

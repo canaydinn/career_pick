@@ -3,25 +3,14 @@ CareerPick — Kariyer Sohbeti backend (Vercel Serverless Function)
 =================================================================
 POST /api/sohbet
 
-Iki islem (action) destekler:
+Islemler (action):
 
-1) action="evaluate"
-   Govde: { action, soru, cevap, type?, yetkinlik? }
-   Donen: { sufficient: bool, followup: str }
-   Bir form/senaryo sorusuna verilen yanitin yeterince bilgi icerip
-   icermedigini Claude ile degerlendirir; yetersizse takip sorusu uretir.
+1) evaluate  — yanit yeterliligi (max 1 takip; kisa ama net cevaplar kabul)
+2) scenarios — profil yanitlarina gore RAG'den meta_senaryo ceker
+3) recommend — profil + senaryo puanlariyla egitim onerir
 
-2) action="recommend"
-   Govde: { action, cevaplar: [ { soru, cevap, key?, type?, yetkinlik? } ] }
-   Donen: {
-     recommendations: [ { ad, kurum, aciklama, sure, gerekce, link } ],
-     yetkinlikler: [ { yetkinlik, puan, seviye, yorum } ]
-   }
-   Profil + senaryo yanitlarini puanlar; eksik yetkinlikleri egitim
-   aramasina ve secime dahil eder.
-
-Ortam degiskenleri: OPENAI_API_KEY, ANTHROPIC_API_KEY, QDRANT_URL,
-QDRANT_API_KEY, (ops.) CLAUDE_MODEL, ALLOWED_ORIGINS
+Ortam: OPENAI_API_KEY, ANTHROPIC_API_KEY, QDRANT_URL, QDRANT_API_KEY,
+(ops.) CLAUDE_MODEL, ALLOWED_ORIGINS
 """
 
 import os
@@ -33,11 +22,15 @@ from http.server import BaseHTTPRequestHandler
 from openai import OpenAI
 from anthropic import Anthropic
 from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-EGITIM_COLLECTION = "edupick_egitimler"
-EMBEDDING_MODEL   = "text-embedding-3-large"
-CLAUDE_MODEL      = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
-EKSIK_ESIGI       = 3.0
+EGITIM_COLLECTION  = "edupick_egitimler"
+CAREER_COLLECTION  = "careerpick"
+EMBEDDING_MODEL    = "text-embedding-3-large"
+CLAUDE_MODEL       = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
+EKSIK_ESIGI        = 3.0
+SENARYO_ADETI      = 5
+MAX_FOLLOWUP_TRIES = 1
 
 MAX_FIELD_LEN  = 4000
 MAX_BODY_LEN   = 60_000
@@ -53,36 +46,61 @@ def _clients():
     return a, o, q
 
 
-# ── Is mantigi ────────────────────────────────────────────────────────────────
+def _embed(metin, o):
+    return o.embeddings.create(model=EMBEDDING_MODEL, input=[metin]).data[0].embedding
 
-def degerlendir(soru, cevap, a, tip="profile", yetkinlik=""):
+
+# ── Evaluate ───────────────────────────────────────────────────────────────────
+
+def degerlendir(soru, cevap, a, tip="profile", yetkinlik="", attempt=0):
+    """attempt = bu soruda daha once kac yetersiz deneme oldu.
+    Bir takipten sonra tekrar reddetme — akisi kilitleme."""
+    try:
+        attempt = int(attempt or 0)
+    except (TypeError, ValueError):
+        attempt = 0
+    if attempt >= MAX_FOLLOWUP_TRIES:
+        return {"sufficient": True, "followup": ""}
+
+    cevap_temiz = (cevap or "").strip()
+    if not cevap_temiz:
+        return {"sufficient": False, "followup": "Kisa da olsa bir yanit yazar misin?"}
+
     if tip == "scenario":
-        prompt = f"""Bir yetkinlik senaryosuna verilen yaniti degerlendiriyorsun.
+        prompt = f"""Yetkinlik senaryosu yanitini degerlendir.
 
-SENARYO / SORU: {soru}
-OLCULEN YETKINLIK: {yetkinlik or "genel"}
-KULLANICI YANITI: {cevap}
+SENARYO: {soru}
+YETKINLIK: {yetkinlik or "genel"}
+YANIT: {cevap_temiz}
 
-Bu yanit, senaryoda ne yapacagini somut adimlarla anlatacak kadar bilgi iceriyor mu?
-Sadece "evet/hayir", "bilmiyorum", tek kelime veya alakasiz yanitlar yetersizdir.
-Kullanici en az bir eylem, yaklasim veya gerekce soylemeli.
+Kabul et (sufficient=true) eger kullanici ne yapacagina dair EN AZ bir eylem, yaklasim veya gerekce soyluyorsa.
+Sadece "bilmiyorum", "evet", "hayir", emoji veya tamamen alakasiz metin yetersizdir.
 
-Sadece su JSON formatinda dondur:
-{{"sufficient": true veya false, "followup": "<yetersizse kibar ve kisa bir takip sorusu, yeterliyse bos birak>"}}"""
+Sadece JSON:
+{{"sufficient": true veya false, "followup": "<yetersizse tek kisa takip sorusu>"}}"""
     else:
-        prompt = f"""Bir kariyer formundaki yaniti degerlendiriyorsun.
+        prompt = f"""Kariyer formu yanitini degerlendir. COK TOLERANSLI ol.
 
 SORU: {soru}
-KULLANICI YANITI: {cevap}
+YANIT: {cevap_temiz}
 
-Bu yanit, soruyu anlamli bir sekilde cevaplayacak kadar bilgi iceriyor mu?
-Cok kisa, belirsiz, alakasiz ya da "bilmiyorum" gibi yanitlar yetersizdir.
+KABUL ET (sufficient=true) — asagidakiler YETERLIDIR:
+- Sektor / hedef / calisma sekli soylenmisse (tek kelime bile: "saglik", "uzaktan")
+- Beceri veya egitim belirtilmisse ("YBS mezunu", "Python, Excel")
+- Deneyim suresi netse: "yeni basliyorum", "yok", "hic yok", "2 yil", "staj yaptim"
+- Kullanici bilerek "yok / hic deneyimim yok / yeni basliyorum" diyorsa TEKRAR SORMA
 
-Sadece su JSON formatinda dondur:
-{{"sufficient": true veya false, "followup": "<yetersizse kibar ve kisa bir takip sorusu, yeterliyse bos birak>"}}"""
+SADECE su durumlarda yetersiz say:
+- Bos / anlamsiz / tamamen alakasiz
+- Soruyla hic ilgisiz tek hece (orn. "asdf", "...")
+
+Ayni soruyu farkli kelimelerle tekrar etme. Takip sorusu gerekiyorsa onceki cevabi kabul edip SADECE eksik bir noktayi sor.
+
+Sadece JSON:
+{{"sufficient": true veya false, "followup": "<yetersizse tek kisa takip>"}}"""
 
     r = a.messages.create(
-        model=CLAUDE_MODEL, max_tokens=250,
+        model=CLAUDE_MODEL, max_tokens=200,
         messages=[{"role": "user", "content": prompt}],
     )
     txt = r.content[0].text.strip()
@@ -90,16 +108,127 @@ Sadece su JSON formatinda dondur:
     if mm:
         try:
             d = json.loads(mm.group())
-            return {"sufficient": bool(d.get("sufficient", True)),
-                    "followup": (d.get("followup") or "").strip()}
+            return {
+                "sufficient": bool(d.get("sufficient", True)),
+                "followup": (d.get("followup") or "").strip(),
+            }
         except Exception:
             pass
-    # Cozumlenemezse akisi tikamamak icin yeterli say.
     return {"sufficient": True, "followup": ""}
 
 
+# ── RAG senaryolar ─────────────────────────────────────────────────────────────
+
+def _yetkinlik_nolarini_cikar(yetkinlik_kodlari):
+    nolar = set()
+    for kod in yetkinlik_kodlari or []:
+        m = re.match(r"(\d+)-", str(kod))
+        if m:
+            nolar.add(int(m.group(1)))
+    return sorted(nolar)
+
+
+def _meslek_profili_getir(arama, o, q):
+    if not arama.strip():
+        return None
+    res = q.query_points(
+        collection_name=CAREER_COLLECTION,
+        query=_embed(arama, o),
+        query_filter=Filter(must=[
+            FieldCondition(key="chunk_type", match=MatchValue(value="meslek_profili"))
+        ]),
+        limit=1,
+        with_payload=True,
+    )
+    if not res.points:
+        return None
+    pl = res.points[0].payload or {}
+    return {
+        "meslek_adi": pl.get("meslek_adi", ""),
+        "yetkinlik_kodlari": pl.get("yetkinlik_kodlari", []),
+    }
+
+
+def _meta_senaryo_getir(yetkinlik_nolari, arama_baglam, o, q, adet=SENARYO_ADETI):
+    if yetkinlik_nolari:
+        sorgu = f"yetkinlik degerlendirme {' '.join(str(n) for n in yetkinlik_nolari[:8])} {arama_baglam}"
+    else:
+        sorgu = arama_baglam or "is yeri yetkinlik senaryosu"
+    res = q.query_points(
+        collection_name=CAREER_COLLECTION,
+        query=_embed(sorgu, o),
+        query_filter=Filter(must=[
+            FieldCondition(key="chunk_type", match=MatchValue(value="meta_senaryo"))
+        ]),
+        limit=adet + 8,
+        with_payload=True,
+    )
+    gorulen = set()
+    out = []
+    for p in res.points:
+        pl = p.payload or {}
+        sno = pl.get("senaryo_no")
+        if sno in gorulen:
+            continue
+        if not (pl.get("senaryo_metni") or "").strip():
+            continue
+        gorulen.add(sno)
+        out.append(pl)
+        if len(out) >= adet:
+            break
+    return out
+
+
+def _profil_baglami(cevaplar):
+    parcalar = []
+    for c in cevaplar or []:
+        key = (c.get("key") or "").strip()
+        cevap = (c.get("cevap") or "").strip()
+        if not cevap:
+            continue
+        if key in ("hedef_sektor", "kariyer_hedefi", "mevcut_yetenekler", "deneyim_suresi"):
+            parcalar.append(cevap)
+        elif (c.get("type") or "profile") != "scenario":
+            parcalar.append(cevap)
+    return " ".join(parcalar).strip()
+
+
+def senaryolari_hazirla(cevaplar, o, q):
+    """Profil yanitlarina gore RAG'den senaryo sorulari uretir."""
+    baglam = _profil_baglami(cevaplar)
+    profil = _meslek_profili_getir(baglam, o, q)
+    nolar = _yetkinlik_nolarini_cikar(profil.get("yetkinlik_kodlari", [])) if profil else []
+    raw = _meta_senaryo_getir(nolar, baglam, o, q, adet=SENARYO_ADETI)
+
+    sorular = []
+    for i, s in enumerate(raw):
+        metin = (s.get("senaryo_metni") or "").strip()
+        yetkinlik = (s.get("ana_yetkinlik_adi") or "Yetkinlik").strip()
+        sno = s.get("senaryo_no", i)
+        sorular.append({
+            "key": f"senaryo_{sno}",
+            "type": "scenario",
+            "yetkinlik": yetkinlik,
+            "q": f"{metin}\n\nBu durumda ilk eylemin ne olurdu ve neden?",
+            "placeholder": "Ilk eylemini ve gerekceni yaz…",
+            "senaryo_no": sno,
+            "ana_yetkinlik_no": s.get("ana_yetkinlik_no"),
+            "ana_yetkinlik_rubrik": (s.get("ana_yetkinlik_rubrik") or "")[:500],
+            "ikincil_yetkinlik_1_adi": s.get("ikincil_yetkinlik_1_adi") or "",
+            "ikincil_yetkinlik_1_rubrik": (s.get("ikincil_yetkinlik_1_rubrik") or "")[:300],
+            "ikincil_yetkinlik_2_adi": s.get("ikincil_yetkinlik_2_adi") or "",
+            "ikincil_yetkinlik_2_rubrik": (s.get("ikincil_yetkinlik_2_rubrik") or "")[:300],
+        })
+    return {
+        "questions": sorular,
+        "meslek": (profil or {}).get("meslek_adi", ""),
+    }
+
+
+# ── Egitim + puanlama ──────────────────────────────────────────────────────────
+
 def egitim_ara(arama_metni, o, q, limit=8):
-    emb = o.embeddings.create(model=EMBEDDING_MODEL, input=[arama_metni]).data[0].embedding
+    emb = _embed(arama_metni, o)
     res = q.query_points(collection_name=EGITIM_COLLECTION, query=emb,
                          limit=limit, with_payload=True).points
     kurslar = []
@@ -116,37 +245,31 @@ def egitim_ara(arama_metni, o, q, limit=8):
 
 
 def yetkinlikleri_puanla(senaryolar, a):
-    """Senaryo yanitlarini 1-5 araliginda puanlar.
-    senaryolar: [{soru, cevap, yetkinlik}]
-    """
     if not senaryolar:
         return []
 
     bloklar = []
     for i, s in enumerate(senaryolar, 1):
-        bloklar.append(
+        rubrik = (s.get("ana_yetkinlik_rubrik") or "").strip()
+        blok = (
             f"{i}) YETKINLIK: {s.get('yetkinlik') or 'Genel'}\n"
             f"   SENARYO: {(s.get('soru') or '')[:700]}\n"
             f"   CEVAP: {(s.get('cevap') or '')[:900]}"
         )
+        if rubrik:
+            blok += f"\n   RUBRIK: {rubrik[:400]}"
+        bloklar.append(blok)
     paket = "\n\n".join(bloklar)
 
     prompt = f"""Davranissal yetkinlik degerlendirme uzmanisin.
-Asagidaki is yeri senaryolarina verilen yanitlari, ilgili yetkinlik icin 1-5 puanla.
+Senaryo yanitlarini ilgili yetkinlik icin 1-5 puanla. Rubrik varsa ona uy.
 
-Olcek:
-1 = cok zayif / belirsiz
-2 = gelistirilmeli
-3 = temel duzey
-4 = iyi
-5 = guclu
-
-Her senaryo icin kisa bir yorum yaz (max 1 cumle). Uydurma; sadece verilen yanita bak.
+Olcek: 1 cok zayif … 5 guclu. Her biri icin max 1 cumle yorum.
 
 SENARYOLAR:
 {paket}
 
-Sadece su JSON formatinda dondur:
+Sadece JSON:
 {{"yetkinlikler":[{{"yetkinlik":"...","puan":<1-5>,"yorum":"..."}}]}}"""
 
     r = a.messages.create(
@@ -198,14 +321,12 @@ def oner(cevaplar, a, o, q):
 
     yetkinlikler = yetkinlikleri_puanla(senaryolar, a) if senaryolar else []
     eksikler = [y["yetkinlik"] for y in yetkinlikler if y.get("seviye") == "gelistirilmeli"]
-    # Eksik yoksa en dusuk puanlilari gelisim alani olarak kullan
     if not eksikler and yetkinlikler:
         sirali = sorted(yetkinlikler, key=lambda y: y.get("puan", 5))
         eksikler = [y["yetkinlik"] for y in sirali[:2]]
 
     profil_metin = " ".join((c.get("cevap") or "") for c in (profil or cevaplar)).strip()
-    arama_parcalari = [profil_metin] + eksikler[:3]
-    arama = " ".join(p for p in arama_parcalari if p).strip() or "kariyer egitimi"
+    arama = " ".join(p for p in [profil_metin] + eksikler[:3] if p).strip() or "kariyer egitimi"
 
     kurslar = egitim_ara(arama, o, q, limit=10)
     if not kurslar:
@@ -218,26 +339,19 @@ def oner(cevaplar, a, o, q):
             + (f" — {y['yorum']}" if y.get("yorum") else "")
             for y in yetkinlikler
         )
-        profil_satirlari += f"\n\nYETKINLIK PUANLARI (senaryo olcumu):\n{y_satir}"
+        profil_satirlari += f"\n\nYETKINLIK PUANLARI (RAG senaryo olcumu):\n{y_satir}"
         if eksikler:
             profil_satirlari += f"\n\nONCELIKLI GELISIM ALANLARI: {', '.join(eksikler)}"
 
     kurs_json = json.dumps(kurslar, ensure_ascii=False)
-
     sistem = """Sen CareerPick platformunun kariyer danismanisin. Kullanicinin profiline
 VE senaryo tabanli yetkinlik puanlarina gore, SADECE verilen egitim listesinden
 en uygun 4-6 tanesini sec. Listede olmayan egitim UYDURMA.
 
-Oncelik:
-1) Kullanicinin hedef sektor / kariyer hedefine uygunluk
-2) Eksik veya gelistirilmeli yetkinlikleri kapatan egitimler
-3) Mevcut becerileri tamamlayan egitimler
+Oncelik: hedef kariyer uygunlugu, sonra eksik yetkinlikleri kapatan egitimler.
 
-Her secim icin kisa bir aciklama, tahmini sure ve kullaniciya neden uygun
-oldugunu Turkce yaz. Gerekcede mumkunse hangi yetkinligi destekledigini belirt.
-
-Sadece su JSON formatinda dondur:
-{"recommendations":[{"ad":"...","kurum":"...","aciklama":"<1-2 cumle>","sure":"<tahmini sure>","gerekce":"<neden uygun, 1-2 cumle>","link":"..."}]}"""
+Sadece JSON:
+{"recommendations":[{"ad":"...","kurum":"...","aciklama":"<1-2 cumle>","sure":"<tahmini sure>","gerekce":"<neden uygun>","link":"..."}]}"""
     user = f"KULLANICI PROFILI:\n{profil_satirlari}\n\nEGITIM LISTESI (JSON):\n{kurs_json}"
 
     r = a.messages.create(
@@ -257,7 +371,7 @@ Sadece su JSON formatinda dondur:
     return [], yetkinlikler
 
 
-# ── HTTP / Guvenlik ─────────────────────────────────────────────────────────────
+# ── HTTP ───────────────────────────────────────────────────────────────────────
 
 def _allowed_origin(origin):
     raw = os.environ.get("ALLOWED_ORIGINS", "")
@@ -274,6 +388,24 @@ def _rate_limited(ip):
     bucket.append(now)
     _RATE_BUCKET[ip] = bucket
     return False
+
+
+def _normalize_cevaplar(cevaplar, limit=24):
+    out = []
+    for c in cevaplar:
+        if not isinstance(c, dict):
+            continue
+        out.append({
+            "soru": str(c.get("soru", ""))[:MAX_FIELD_LEN],
+            "cevap": str(c.get("cevap", ""))[:MAX_FIELD_LEN],
+            "key": str(c.get("key", ""))[:120],
+            "type": str(c.get("type", "profile"))[:40],
+            "yetkinlik": str(c.get("yetkinlik", ""))[:200],
+            "ana_yetkinlik_rubrik": str(c.get("ana_yetkinlik_rubrik", ""))[:500],
+        })
+        if len(out) >= limit:
+            break
+    return out
 
 
 class handler(BaseHTTPRequestHandler):
@@ -328,27 +460,27 @@ class handler(BaseHTTPRequestHandler):
                 cevap = (data.get("cevap") or "").strip()
                 tip = (data.get("type") or "profile").strip()
                 yetkinlik = (data.get("yetkinlik") or "").strip()
+                attempt = data.get("attempt", 0)
                 if not cevap:
                     return self._json(400, {"error": "Cevap bos olamaz."})
                 if len(soru) > MAX_FIELD_LEN or len(cevap) > MAX_FIELD_LEN:
                     return self._json(400, {"error": "Girdi cok uzun."})
                 a, _, _ = _clients()
-                return self._json(200, degerlendir(soru, cevap, a, tip, yetkinlik))
+                return self._json(200, degerlendir(soru, cevap, a, tip, yetkinlik, attempt))
+
+            elif action == "scenarios":
+                cevaplar = data.get("cevaplar")
+                if not isinstance(cevaplar, list) or not cevaplar:
+                    return self._json(400, {"error": "Cevaplar eksik."})
+                cevaplar = _normalize_cevaplar(cevaplar)
+                _, o, q = _clients()
+                return self._json(200, senaryolari_hazirla(cevaplar, o, q))
 
             elif action == "recommend":
                 cevaplar = data.get("cevaplar")
                 if not isinstance(cevaplar, list) or not cevaplar:
                     return self._json(400, {"error": "Cevaplar eksik."})
-                cevaplar = [
-                    {
-                        "soru": str(c.get("soru", ""))[:MAX_FIELD_LEN],
-                        "cevap": str(c.get("cevap", ""))[:MAX_FIELD_LEN],
-                        "key": str(c.get("key", ""))[:120],
-                        "type": str(c.get("type", "profile"))[:40],
-                        "yetkinlik": str(c.get("yetkinlik", ""))[:200],
-                    }
-                    for c in cevaplar if isinstance(c, dict)
-                ][:24]
+                cevaplar = _normalize_cevaplar(cevaplar)
                 a, o, q = _clients()
                 recs, yetkinlikler = oner(cevaplar, a, o, q)
                 return self._json(200, {

@@ -81,14 +81,18 @@ class DevHandler(SimpleHTTPRequestHandler):
         try:
             a, o, q = sohbet._clients()
             if action == "evaluate":
-                print(f"[REQ] evaluate tip={data.get('type','profile')!r} cevap={str(data.get('cevap',''))[:40]!r}")
+                print(f"[REQ] evaluate tip={data.get('type','profile')!r} attempt={data.get('attempt',0)} cevap={str(data.get('cevap',''))[:40]!r}")
                 return self._json(200, sohbet.degerlendir(
                     data.get("soru", ""),
                     data.get("cevap", ""),
                     a,
                     data.get("type") or "profile",
                     data.get("yetkinlik") or "",
+                    data.get("attempt", 0),
                 ))
+            elif action == "scenarios":
+                print("[REQ] scenarios")
+                return self._json(200, sohbet.senaryolari_hazirla(data.get("cevaplar", []), o, q))
             elif action == "recommend":
                 print("[REQ] recommend")
                 recs, yetkinlikler = sohbet.oner(data.get("cevaplar", []), a, o, q)
