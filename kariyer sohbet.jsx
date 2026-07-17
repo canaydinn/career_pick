@@ -4,11 +4,17 @@ const IcK = window.CPIcon;
 const LogoK = window.CPLogo;
 
 /* ---------- Backend cagrilari (ileride degistirilebilir sekilde izole) ---------- */
-async function apiDegerlendir(soru, cevap) {
+async function apiDegerlendir(soru, cevap, meta) {
   const r = await fetch("/api/sohbet", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "evaluate", soru, cevap }),
+    body: JSON.stringify({
+      action: "evaluate",
+      soru,
+      cevap,
+      type: (meta && meta.type) || "profile",
+      yetkinlik: (meta && meta.yetkinlik) || "",
+    }),
   });
   if (!r.ok) throw new Error("evaluate");
   return r.json(); // { sufficient, followup }
@@ -20,7 +26,7 @@ async function apiOner(cevaplar) {
     body: JSON.stringify({ action: "recommend", cevaplar }),
   });
   if (!r.ok) throw new Error("recommend");
-  return r.json(); // { recommendations: [...] }
+  return r.json(); // { recommendations, yetkinlikler }
 }
 
 /* ---------- Profil deposu (localStorage; backend'e tasinabilir) ---------- */
@@ -58,21 +64,22 @@ function KariyerSohbet() {
   const [busy, setBusy] = useStateK(false);
   const [phase, setPhase] = useStateK("asking");    // "asking" | "result"
   const [editingIndex, setEditingIndex] = useStateK(null); // duzenlenmekte olan gecmis soru indeksi
-  const [attempts, setAttempts] = useStateK({});    // { [soruIndex]: [{ q, followupText }] } - yetersiz bulunup elenen onceki yanitlar (kaybolmasinlar, tam gecmis burada tutulur)
-  const [errorMsg, setErrorMsg] = useStateK("");    // gecici ag/istek hatasi mesaji (yetersiz cevaptan ayri tutulur)
-  const [recomputing, setRecomputing] = useStateK(false); // sonuc ekranindayken bir cevap duzenlendiginde onerileri yeniden hesaplama
+  const [attempts, setAttempts] = useStateK({});    // { [soruIndex]: [{ q, followupText }] }
+  const [errorMsg, setErrorMsg] = useStateK("");
+  const [recomputing, setRecomputing] = useStateK(false);
   const [recs, setRecs] = useStateK([]);
+  const [skills, setSkills] = useStateK([]);        // senaryo yetkinlik ozeti
   const [selected, setSelected] = useStateK(() => ProfileStore.getAll());
 
   const bodyRef = useRefK(null);
   const taRef = useRefK(null);
 
+  const qMeta = (i) => S.questions[i] || null;
   const questionText = (i) => (S.questions[i] ? S.questions[i].q : "");
+  const isScenario = (i) => !!(S.questions[i] && S.questions[i].type === "scenario");
+  const activeIndex = editingIndex !== null ? editingIndex : step;
+  const activePlaceholder = (qMeta(activeIndex) && qMeta(activeIndex).placeholder) || S.placeholder;
 
-  // Gorunen mesaj listesi her zaman answers/step/editingIndex durumundan turetilir;
-  // boylece "geri" veya "duzenle" hicbir zaman gecmis cevaplari silmez.
-  // Yetersiz bulunup elenen onceki denemeler de mesaj listesinde kalsin;
-  // boylece kullanicinin yazdigi hicbir cevap sessizce kaybolmaz.
   function pushAttempts(arr, i, prefix) {
     (attempts[i] || []).forEach((att, ai) => {
       arr.push({ key: prefix + "u" + i + "-" + ai, role: "user", content: att.q });
@@ -80,15 +87,26 @@ function KariyerSohbet() {
     });
   }
 
+  function pushQuestion(arr, i, key, extra) {
+    arr.push({
+      key,
+      role: "assistant",
+      content: questionText(i),
+      isScenario: isScenario(i),
+      yetkinlik: (qMeta(i) && qMeta(i).yetkinlik) || "",
+      ...(extra || {}),
+    });
+  }
+
   function buildMessages() {
     const arr = [{ key: "greeting", role: "assistant", content: S.greeting }];
     for (let i = 0; i < step; i++) {
       if (editingIndex === i) {
-        arr.push({ key: "editq" + i, role: "assistant", content: questionText(i), isEditing: true });
+        pushQuestion(arr, i, "editq" + i, { isEditing: true });
         pushAttempts(arr, i, "editatt");
         if (errorMsg) arr.push({ key: "editerr" + i, role: "assistant", content: errorMsg, isError: true });
       } else {
-        arr.push({ key: "q" + i, role: "assistant", content: questionText(i) });
+        pushQuestion(arr, i, "q" + i);
         pushAttempts(arr, i, "att");
         arr.push({ key: "a" + i, role: "user", content: answers[i], editableIndex: i });
       }
@@ -98,7 +116,7 @@ function KariyerSohbet() {
         arr.push({ key: "thinking2", role: "assistant", content: S.thinking });
       } else if (phase === "asking") {
         if (step < N) {
-          arr.push({ key: "curq", role: "assistant", content: questionText(step) });
+          pushQuestion(arr, step, "curq");
           pushAttempts(arr, step, "curatt");
           if (errorMsg) arr.push({ key: "curerr", role: "assistant", content: errorMsg, isError: true });
         } else {
@@ -115,25 +133,31 @@ function KariyerSohbet() {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [msgs.length, busy, showChatUI]);
 
-  // Input, gecmis bir cevabi duzenlemek uzere geri doldururken de otomatik boyutlansin
   useEffectK(() => {
     if (taRef.current) autosize(taRef.current);
   }, [input]);
 
-  // Tamamlanan soru sayisina gore ilerleme yuzdesi (sonuc ekraninda %100)
   const progressPct = (phase === "result" && editingIndex === null && !recomputing) ? 100 : Math.round((step / N) * 100);
 
   function buildCevaplar(arr) {
-    return S.questions.map((qq, i) => ({ soru: qq.q, key: qq.key, cevap: arr[i] || "" }));
+    return S.questions.map((qq, i) => ({
+      soru: qq.q,
+      key: qq.key,
+      type: qq.type || "profile",
+      yetkinlik: qq.yetkinlik || "",
+      cevap: arr[i] || "",
+    }));
   }
 
   async function runRecommend(finalAnswers) {
     try {
       const data = await apiOner(buildCevaplar(finalAnswers));
       setRecs(Array.isArray(data.recommendations) ? data.recommendations : []);
+      setSkills(Array.isArray(data.yetkinlikler) ? data.yetkinlikler : []);
     } catch (e) {
       console.error("[SOHBET] recommend:", e.message);
       setRecs([]);
+      setSkills([]);
     } finally {
       setPhase("result");
     }
@@ -150,7 +174,8 @@ function KariyerSohbet() {
     setErrorMsg("");
 
     try {
-      const ev = await apiDegerlendir(questionText(idx), q);
+      const meta = qMeta(idx) || {};
+      const ev = await apiDegerlendir(questionText(idx), q, meta);
       if (ev && ev.sufficient === false) {
         const followupText = ev.followup || questionText(idx);
         setAttempts((prev) => {
@@ -163,7 +188,6 @@ function KariyerSohbet() {
         newAnswers[idx] = q;
         setAnswers(newAnswers);
         if (editingIndex !== null) {
-          // Gecmis bir cevap duzenlendi; sonraki cevaplar hic dokunulmadan kalir.
           setEditingIndex(null);
           if (phase === "result") {
             setRecomputing(true);
@@ -180,7 +204,7 @@ function KariyerSohbet() {
       }
     } catch (e) {
       console.error("[SOHBET] evaluate:", e.message);
-      setInput(q); // cevap kaybolmasin, kullanici tekrar yazmadan yeniden gonderebilsin
+      setInput(q);
       setErrorMsg(S.error);
     } finally {
       setBusy(false);
@@ -207,8 +231,6 @@ function KariyerSohbet() {
     setInput("");
   }
 
-  // Ust bardaki "Geri" kisayolu: en son cevaplanan soruyu duzenlemeye ac.
-  // Herhangi bir onceki soruyu duzenlemek icin o cevabin yanindaki kalem ikonu kullanilabilir.
   function goBack() {
     if (busy || step <= 0) return;
     startEdit(step - 1);
@@ -232,6 +254,7 @@ function KariyerSohbet() {
     setAttempts({});
     setRecomputing(false);
     setRecs([]);
+    setSkills([]);
     setPhase("asking");
     setInput("");
   }
@@ -280,7 +303,12 @@ function KariyerSohbet() {
               {msgs.map((m) => (
                 <div className={"cs-msg-group " + m.role} key={m.key}>
                   {m.isFollowup && <div className="cs-followup-tag">{S.followupTag}</div>}
-                  <div className={"cs-msg " + m.role + (m.isEditing ? " cs-editing" : "") + (m.isFollowup ? " cs-followup" : "") + (m.isError ? " cs-error" : "")}>
+                  {m.isScenario && !m.isFollowup && (
+                    <div className="cs-scenario-tag">
+                      {S.scenarioTag}{m.yetkinlik ? ` · ${m.yetkinlik}` : ""}
+                    </div>
+                  )}
+                  <div className={"cs-msg " + m.role + (m.isEditing ? " cs-editing" : "") + (m.isFollowup ? " cs-followup" : "") + (m.isError ? " cs-error" : "") + (m.isScenario ? " cs-scenario" : "")}>
                     <div className="cs-bubble">{m.content}</div>
                     {m.role === "user" && typeof m.editableIndex === "number" && !isEditing && !busy && (
                       <button
@@ -309,7 +337,7 @@ function KariyerSohbet() {
                   ref={taRef}
                   rows={1}
                   value={input}
-                  placeholder={S.placeholder}
+                  placeholder={activePlaceholder}
                   disabled={busy}
                   onChange={(e) => { setInput(e.target.value); autosize(e.target); }}
                   onKeyDown={onKey}
@@ -326,6 +354,28 @@ function KariyerSohbet() {
               <h2>{S.result.title}</h2>
               <p>{S.result.sub}</p>
             </div>
+
+            {skills.length > 0 && (
+              <div className="cs-skills">
+                <h3>{S.result.skillsTitle}</h3>
+                <p className="cs-skills-hint">{S.result.skillsHint}</p>
+                <ul className="cs-skills-list">
+                  {skills.map((sk, i) => {
+                    const strong = sk.seviye === "guclu";
+                    return (
+                      <li className={"cs-skill-item " + (strong ? "strong" : "develop")} key={i}>
+                        <div className="cs-skill-top">
+                          <span className="cs-skill-name">{sk.yetkinlik}</span>
+                          <span className="cs-skill-badge">{strong ? S.result.skillStrong : S.result.skillDevelop}</span>
+                        </div>
+                        <div className="cs-skill-score">{S.result.skillScore(sk.puan, 5)}</div>
+                        {sk.yorum ? <div className="cs-skill-note">{sk.yorum}</div> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
 
             {recs.length === 0 ? (
               <p className="cs-profile-empty" style={{ textAlign: "center" }}>{S.result.empty}</p>
@@ -357,6 +407,9 @@ function KariyerSohbet() {
                 {S.questions.map((qq, i) => (
                   <li className="cs-answer-item" key={i}>
                     <div className="cs-answer-text">
+                      {qq.type === "scenario" && (
+                        <div className="cs-answer-skill">{S.scenarioTag}{qq.yetkinlik ? ` · ${qq.yetkinlik}` : ""}</div>
+                      )}
                       <div className="cs-answer-q">{qq.q}</div>
                       <div className="cs-answer-a">{answers[i]}</div>
                     </div>
