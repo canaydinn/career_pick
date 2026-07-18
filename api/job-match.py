@@ -191,6 +191,53 @@ def fetch_url_text(url):
     return True, "", text[:MAX_TEXT_CHARS]
 
 
+def parse_job_heuristic(text):
+    """Claude yoksa anahtar kelime ile kaba ilan ozeti."""
+    t = (text or "")[:MAX_TEXT_CHARS]
+    low = t.lower()
+    title = "İş ilanı"
+    for line in t.splitlines():
+        s = line.strip()
+        if 12 <= len(s) <= 100 and not s.startswith("•") and not s.startswith("-"):
+            title = s[:200]
+            break
+
+    catalog = [
+        ("inşaat yönetimi", ["inşaat yönetimi", "insaat yonetimi", "proje organizasyon"]),
+        ("proje / bütçe yönetimi", ["bütçe", "butce", "iş program", "is program", "proje"]),
+        ("liderlik ve koordinasyon", ["liderlik", "yönetim ve koordinasyon", "yonetim ve koordinasyon"]),
+        ("taşeron yönetimi", ["taşeron", "taseron"]),
+        ("İngilizce", ["ingilizce", "İngilizce"]),
+        ("bilgisayar programları", ["bilgisayar program", "yazılım", "cad", "ms project"]),
+        ("inşaat malzemeleri bilgisi", ["malzeme"]),
+        ("bakım / tadilat", ["bakım", "bakim", "tadilat", "onarım", "onarim"]),
+        ("sektör deneyimi", ["otel", "konut", "alışveriş", "alisveris", "endüstriyel", "endustriyel"]),
+        ("ilgili eğitim", ["üniversite", "universite", "mühendis", "muhendis", "mezun"]),
+        ("en az 5 yıl tecrübe", ["5 yıl", "5 yil", "en az 5"]),
+    ]
+    req = []
+    for label, needles in catalog:
+        if any(n in low for n in needles):
+            req.append(label)
+    if not req:
+        req = ["iletisim", "ilgili deneyim", "problem cozme"]
+
+    exp = ""
+    m = re.search(r"en az\s*(\d+)\s*y[iı]l", low)
+    if m:
+        exp = f"En az {m.group(1)} yıl"
+    elif "tecrübe" in low or "tecrube" in low:
+        exp = "Tecrübe aranıyor"
+
+    return {
+        "title": title,
+        "required_skills": req[:16],
+        "nice_to_have": [],
+        "experience_years": exp,
+        "summary": t[:400],
+    }
+
+
 def parse_job_with_claude(text, a):
     text = (text or "")[:MAX_TEXT_CHARS]
     sistem = """Sen is ilani analiz uzmanisin.
@@ -199,24 +246,37 @@ Ilan baska dildeyse required_skills ve nice_to_have terimlerini Turkce karsilikl
 Kesin maas/is garantisi uydurma.
 Sadece JSON:
 {"title":"...","required_skills":["..."],"nice_to_have":["..."],"experience_years":"...","summary":"..."}"""
-    r = a.messages.create(
-        model=CLAUDE_MODEL, max_tokens=1200, system=sistem,
-        messages=[{"role": "user", "content": f"ILAN METNI:\n{text}"}],
-    )
-    d = _json_obj_bul(r.content[0].text.strip()) or {}
-    title = str(d.get("title") or "Is ilani").strip()[:200]
+    try:
+        r = a.messages.create(
+            model=CLAUDE_MODEL, max_tokens=1200, system=sistem,
+            messages=[{"role": "user", "content": f"ILAN METNI:\n{text}"}],
+        )
+        raw = ""
+        if r.content and len(r.content) > 0:
+            block = r.content[0]
+            raw = (getattr(block, "text", None) or str(block) or "").strip()
+        d = _json_obj_bul(raw) or {}
+    except Exception as e:
+        print("[ERROR] parse_job_with_claude:", repr(e))
+        return parse_job_heuristic(text)
+
+    title = str(d.get("title") or "").strip()[:200]
     req = d.get("required_skills") if isinstance(d.get("required_skills"), list) else []
     nice = d.get("nice_to_have") if isinstance(d.get("nice_to_have"), list) else []
     req = [str(x).strip()[:80] for x in req if str(x).strip()][:20]
     nice = [str(x).strip()[:80] for x in nice if str(x).strip()][:12]
-    if not req:
-        req = ["iletisim", "problem cozme", "ilgili deneyim"]
+    if not title or not req:
+        fb = parse_job_heuristic(text)
+        if not title:
+            title = fb["title"]
+        if not req:
+            req = fb["required_skills"]
     return {
-        "title": title,
+        "title": title or "İş ilanı",
         "required_skills": req,
         "nice_to_have": nice,
         "experience_years": str(d.get("experience_years") or "").strip()[:80],
-        "summary": str(d.get("summary") or "").strip()[:500],
+        "summary": str(d.get("summary") or "").strip()[:500] or text[:400],
     }
 
 
@@ -321,18 +381,31 @@ def recommend_for_gaps(gaps, job_title, a, o, q):
     if not gaps:
         gaps = ["iletisim", "liderlik"]
     arama = " ".join(gaps[:5] + [job_title or "", "egitim sertifika"])
-    kurslar = egitim_ara(arama, o, q, limit=12)
-    if len(kurslar) < 4:
-        ekstra = egitim_ara(" ".join(gaps[:3]) + " yoneticilik", o, q, limit=8)
-        seen = {(k.get("ad"), k.get("link")) for k in kurslar}
-        for k in ekstra:
-            key = (k.get("ad"), k.get("link"))
-            if key not in seen:
-                kurslar.append(k)
-                seen.add(key)
+    kurslar = []
+    try:
+        kurslar = egitim_ara(arama, o, q, limit=12)
+        if len(kurslar) < 4:
+            ekstra = egitim_ara(" ".join(gaps[:3]) + " yoneticilik", o, q, limit=8)
+            seen = {(k.get("ad"), k.get("link")) for k in kurslar}
+            for k in ekstra:
+                key = (k.get("ad"), k.get("link"))
+                if key not in seen:
+                    kurslar.append(k)
+                    seen.add(key)
+    except Exception as e:
+        print("[ERROR] egitim_ara:", repr(e))
+        kurslar = []
 
     if not kurslar:
-        return []
+        # Qdrant yoksa bile bos donme — UI kirilmasin
+        return [{
+            "ad": f"{g} geliştirme eğitimi"[:120],
+            "kurum": "",
+            "aciklama": "İlan boşluğuna yönelik genel öneri (katalog araması geçici olarak kullanılamadı).",
+            "sure": "",
+            "gerekce": f"İlandaki boşluk: {g}",
+            "link": "",
+        } for g in gaps[:4]]
 
     kurs_json = json.dumps(kurslar[:12], ensure_ascii=False)
     sistem = """CareerPick egitim danismani.
@@ -410,10 +483,53 @@ def analyze_job(url, text, profile):
             "need_paste": True,
         }
 
-    a, o, q = _clients()
-    job = parse_job_with_claude(body, a)
-    fit = score_fit(job, profile or {}, a)
-    recs = recommend_for_gaps(fit.get("gaps") or [], job.get("title"), a, o, q)
+    try:
+        a, o, q = _clients()
+    except KeyError as e:
+        print("[ERROR] job-match env:", str(e))
+        # En azindan heuristic ile cevap ver
+        job = parse_job_heuristic(body)
+        skills = job["required_skills"]
+        items = [{"skill": s, "status": "kismen", "note": ""} for s in skills]
+        return {
+            "ok": True,
+            "scrape_ok": scrape_ok if used_url else True,
+            "scrape_error": scrape_error or None,
+            "need_paste": False,
+            "job_url": used_url,
+            "job": job,
+            "fit_score": 45.0,
+            "strong": [],
+            "gaps": skills[:6],
+            "items": items,
+            "recommendations": [],
+            "disclaimer": DISCLAIMER,
+            "degraded": True,
+        }
+
+    try:
+        job = parse_job_with_claude(body, a)
+    except Exception as e:
+        print("[ERROR] analyze parse:", repr(e))
+        job = parse_job_heuristic(body)
+
+    try:
+        fit = score_fit(job, profile or {}, a)
+    except Exception as e:
+        print("[ERROR] analyze score:", repr(e))
+        skills = job.get("required_skills") or []
+        fit = {
+            "fit_score": 45.0,
+            "items": [{"skill": s, "status": "kismen", "note": ""} for s in skills[:8]],
+            "strong": [],
+            "gaps": skills[:6],
+        }
+
+    try:
+        recs = recommend_for_gaps(fit.get("gaps") or [], job.get("title"), a, o, q)
+    except Exception as e:
+        print("[ERROR] analyze recs:", repr(e))
+        recs = []
 
     return {
         "ok": True,
@@ -505,9 +621,30 @@ class handler(BaseHTTPRequestHandler):
             return self._json(500, {"error": "Sunucu yapilandirmasi eksik."})
         except Exception as e:
             print("[ERROR] job-match:", repr(e))
+            # Son care: yapistirilan metinle heuristic
+            fallback_text = str(data.get("text") or "").strip() if isinstance(data, dict) else ""
+            if fallback_text:
+                try:
+                    job = parse_job_heuristic(fallback_text)
+                    skills = job.get("required_skills") or []
+                    return self._json(200, {
+                        "ok": True,
+                        "scrape_ok": True,
+                        "job_url": None,
+                        "job": job,
+                        "fit_score": 45.0,
+                        "strong": [],
+                        "gaps": skills[:6],
+                        "items": [{"skill": s, "status": "kismen", "note": ""} for s in skills[:8]],
+                        "recommendations": [],
+                        "disclaimer": DISCLAIMER,
+                        "degraded": True,
+                    })
+                except Exception as e2:
+                    print("[ERROR] job-match fallback:", repr(e2))
             return self._json(503, {
                 "ok": False,
-                "error": "Analiz su an kullanilamiyor. Metni yapistirip tekrar dene.",
+                "error": "Analiz şu an tamamlanamadı. Biraz bekleyip tekrar dene; metin yapıştırılıysa sorun değil.",
                 "need_paste": True,
                 "disclaimer": DISCLAIMER,
             })
