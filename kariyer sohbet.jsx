@@ -133,15 +133,17 @@ function KariyerSohbet() {
   const [selected, setSelected] = useStateK(() => ProfileStore.getAll());
   const [authUser, setAuthUser] = useStateK(null);
   const [authReady, setAuthReady] = useStateK(false);
+  const [authConfigured, setAuthConfigured] = useStateK(false);
 
   const bodyRef = useRefK(null);
   const taRef = useRefK(null);
 
   useEffectK(() => {
     let off = () => {};
-    if (!window.CPAuth) { setAuthReady(true); return; }
+    if (!window.CPAuth) { setAuthReady(true); setAuthConfigured(false); return; }
     (async () => {
       await CPAuth.init();
+      setAuthConfigured(!!CPAuth.isConfigured());
       setAuthReady(true);
       off = CPAuth.onAuthStateChange(async (u) => {
         setAuthUser(u);
@@ -310,6 +312,7 @@ function KariyerSohbet() {
   }
 
   async function submit(text) {
+    if (!authUser) return;
     const q = (text ?? input).trim();
     if (!q || busy || loadingScenarios) return;
     const idx = editingIndex !== null ? editingIndex : step;
@@ -444,28 +447,52 @@ function KariyerSohbet() {
   const authLabel = authUser
     ? ((authUser.user_metadata && (authUser.user_metadata.full_name || authUser.user_metadata.name)) || authUser.email || "")
     : "";
+  const A = S.auth || {};
+  const gateBlocked = !authReady || !authUser;
 
   return (
     <div className="cs-page">
       <div className="cs-top">
         <a href="index.html" aria-label={S.brand} style={{ display: "inline-flex" }}><LogoK /></a>
         <div className="cs-auth">
-          <a className="cs-auth-link" href="profil.html">{(S.auth && S.auth.profile) || "Profil"}</a>
+          <a className="cs-auth-link" href="profil.html">{A.profile || "Profil"}</a>
           {authReady && authUser ? (
             <React.Fragment>
               <span className="cs-auth-name" title={authUser.email || ""}>{authLabel}</span>
               <button type="button" className="cs-auth-btn ghost" onClick={logout}>
-                {(S.auth && S.auth.logout) || "Çıkış"}
+                {A.logout || "Çıkış"}
               </button>
             </React.Fragment>
           ) : (
-            <button type="button" className="cs-auth-btn" onClick={loginGoogle} disabled={!authReady}>
-              {(S.auth && S.auth.login) || "Gmail ile giriş"}
+            <button type="button" className="cs-auth-btn" onClick={loginGoogle} disabled={!authReady || !authConfigured}>
+              {A.login || "Gmail ile giriş"}
             </button>
           )}
         </div>
       </div>
 
+      {gateBlocked ? (
+        <div className="cs-shell">
+          <div className="cs-gate">
+            {!authReady ? (
+              <p className="cs-gate-muted">{A.loading || "…"}</p>
+            ) : !authConfigured ? (
+              <React.Fragment>
+                <h2>{A.requiredTitle}</h2>
+                <p>{A.notConfigured}</p>
+              </React.Fragment>
+            ) : (
+              <React.Fragment>
+                <h2>{A.requiredTitle}</h2>
+                <p>{A.requiredBody}</p>
+                <button type="button" className="cs-auth-btn cs-gate-btn" onClick={loginGoogle}>
+                  {A.login || "Gmail ile giriş"}
+                </button>
+              </React.Fragment>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="cs-shell">
         <div className="cs-head">
           {isEditing ? (
@@ -638,6 +665,7 @@ function KariyerSohbet() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

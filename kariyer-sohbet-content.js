@@ -23,6 +23,10 @@ window.CP_SOHBET = {
       logout: "Çıkış",
       profile: "Profil",
       error: "Giriş başlatılamadı. Supabase ayarlarını kontrol et.",
+      requiredTitle: "Devam etmek için giriş yap",
+      requiredBody: "Kariyer Sohbeti yalnızca Gmail hesabınla kullanılabilir. Yanıtların ve eğitim önerilerin profiline kaydedilir.",
+      loading: "Oturum kontrol ediliyor…",
+      notConfigured: "Giriş sistemi henüz yapılandırılmadı. SUPABASE_URL ve SUPABASE_ANON_KEY ortam değişkenlerini ekleyip yeniden deploy et.",
     },
     questions: [
       { key: "hedef_sektor",      type: "profile",  q: "Hangi sektörde çalışmak istiyorsun?",                          placeholder: "Örn. yazılım, finans, sağlık, inşaat…" },
@@ -74,6 +78,10 @@ window.CP_SOHBET = {
       logout: "Sign out",
       profile: "Profile",
       error: "Could not start sign-in. Check Supabase settings.",
+      requiredTitle: "Sign in to continue",
+      requiredBody: "Career Chat requires a Gmail account. Your answers and course recommendations will be saved to your profile.",
+      loading: "Checking session…",
+      notConfigured: "Auth is not configured yet. Add SUPABASE_URL and SUPABASE_ANON_KEY, then redeploy.",
     },
     questions: [
       { key: "hedef_sektor",      type: "profile",  q: "Which sector would you like to work in?",                       placeholder: "e.g. software, finance, healthcare, construction…" },

@@ -72,6 +72,11 @@
 .cs-auth-btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
 .cs-auth-btn:hover:not(:disabled) { filter: brightness(1.05); }
 .cs-auth-btn:disabled { opacity: .45; cursor: default; }
+.cs-gate { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px; padding: 48px 20px 80px; max-width: 440px; margin: 0 auto; }
+.cs-gate h2 { font-family: var(--font-display); font-size: 26px; margin: 0; }
+.cs-gate p { color: var(--muted); line-height: 1.55; margin: 0; }
+.cs-gate-muted { color: var(--faint); }
+.cs-gate-btn { margin-top: 8px; padding: 12px 22px; font-size: 14.5px; }
 .cs-shell { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 22px 20px 0; display: flex; flex-direction: column; min-height: 0; }
 .cs-head { display: flex; align-items: center; gap: 14px; padding: 4px 0 16px; }
 .cs-head .cs-title { flex: 1; text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 18px; }
