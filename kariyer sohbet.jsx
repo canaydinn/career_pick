@@ -18,18 +18,22 @@ async function persistAnswer(meta, answerText) {
   }
 }
 
-async function persistResults(recs, skills) {
+async function persistResults(recs, skills, cevaplar) {
   if (!window.CPAuth) return;
   try {
     const user = await CPAuth.getUser();
     if (!user) return;
-    if (Array.isArray(recs) && recs.length) {
-      await CPAuth.saveRecommendations(recs.map((r) => ({
-        training_id: r.link || r.ad,
-        training_name: r.ad,
-        link: r.link || "",
-        status: "eksik",
-      })));
+    const trainingsPayload = Array.isArray(recs)
+      ? recs.map((r) => ({
+          training_id: r.link || r.ad,
+          training_name: r.ad,
+          link: r.link || "",
+          status: "eksik",
+          gerekce: r.gerekce || "",
+        }))
+      : [];
+    if (trainingsPayload.length) {
+      await CPAuth.saveRecommendations(trainingsPayload);
     }
     if (Array.isArray(skills) && skills.length) {
       await CPAuth.saveInsights(skills.map((sk) => ({
@@ -42,8 +46,45 @@ async function persistResults(recs, skills) {
         ].filter(Boolean).join(" — "),
       })));
     }
+    await persistRoadmap(trainingsPayload, skills, cevaplar);
   } catch (e) {
     console.warn("[SOHBET] persistResults:", e.message || e);
+  }
+}
+
+async function persistRoadmap(trainings, skills, cevaplar) {
+  if (!window.CPAuth) return;
+  try {
+    let hedef = "";
+    if (Array.isArray(cevaplar)) {
+      const hit = cevaplar.find((c) => c && c.key === "kariyer_hedefi");
+      if (hit) hedef = (hit.cevap || "").trim();
+    }
+    if (!hedef) {
+      try { hedef = await CPAuth.fetchCareerGoal(); } catch (e) { /* ignore */ }
+    }
+    const r = await fetch("/api/sohbet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "roadmap",
+        hedef,
+        yetkinlikler: Array.isArray(skills) ? skills : [],
+        trainings: (trainings || []).map((t) => ({
+          training_id: t.training_id,
+          training_name: t.training_name,
+          gerekce: t.gerekce || "",
+        })),
+      }),
+    });
+    if (!r.ok) throw new Error("roadmap_http");
+    const data = await r.json();
+    const steps = Array.isArray(data.steps) ? data.steps : [];
+    if (steps.length >= 3) {
+      await CPAuth.saveRoadmap(steps);
+    }
+  } catch (e) {
+    console.warn("[SOHBET] persistRoadmap:", e.message || e);
   }
 }
 
@@ -276,12 +317,13 @@ function KariyerSohbet() {
 
   async function runRecommend(finalAnswers, qs) {
     try {
-      const data = await apiOner(buildCevaplar(finalAnswers, qs || questions));
+      const cevaplar = buildCevaplar(finalAnswers, qs || questions);
+      const data = await apiOner(cevaplar);
       const nextRecs = Array.isArray(data.recommendations) ? data.recommendations : [];
       const nextSkills = Array.isArray(data.yetkinlikler) ? data.yetkinlikler : [];
       setRecs(nextRecs);
       setSkills(nextSkills);
-      await persistResults(nextRecs, nextSkills);
+      await persistResults(nextRecs, nextSkills, cevaplar);
     } catch (e) {
       console.error("[SOHBET] recommend:", e.message);
       setRecs([]);

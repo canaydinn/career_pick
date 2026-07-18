@@ -8,6 +8,7 @@ Islemler (action):
 1) evaluate  — yanit yeterliligi (max 1 takip; kisa ama net cevaplar kabul)
 2) scenarios — profil yanitlarina gore RAG'den meta_senaryo ceker
 3) recommend — profil + senaryo puanlariyla egitim onerir
+4) roadmap   — hedef + yetkinlik + egitimlerden 3-5 adimlik yol haritasi
 
 Ortam: OPENAI_API_KEY, ANTHROPIC_API_KEY, QDRANT_URL, QDRANT_API_KEY,
 (ops.) CLAUDE_MODEL, ALLOWED_ORIGINS
@@ -475,6 +476,204 @@ Sadece su JSON'u dondur (baska metin yok):
     return fallback, yetkinlikler
 
 
+# ── Yol haritasi ───────────────────────────────────────────────────────────────
+
+_TEMEL_KW = (
+    "temel", "giris", "baslangic", "oryantasyon", "iletisim", "misafir",
+    "hizmet", "operasyon", "excel", "ofis", "dil", "ingilizce", "yazilim",
+    "kod", "python", "veri giris",
+)
+_UYGULAMA_KW = (
+    "uygulama", "pratik", "proje", "analiz", "planlama", "satis", "pazarlama",
+    "musteri", "sikayet", "operasyonel", "surec", "yetenek", "beceri",
+)
+_LIDERLIK_KW = (
+    "lider", "yonet", "ekip", "koordin", "strateji", "gelir", "finans",
+    "insan kaynak", "mentor", "karar", "yonetici", "mudur",
+)
+
+
+def _normalize_trainings_payload(trainings):
+    out = []
+    for t in trainings or []:
+        if not isinstance(t, dict):
+            continue
+        tid = str(t.get("training_id") or t.get("id") or t.get("link") or t.get("ad") or "").strip()
+        name = str(t.get("training_name") or t.get("ad") or t.get("name") or "").strip()
+        if not tid and not name:
+            continue
+        if not tid:
+            tid = name
+        out.append({
+            "training_id": tid,
+            "training_name": name or tid,
+            "yetkinlik": str(t.get("yetkinlik") or t.get("tag") or "").strip(),
+            "gerekce": str(t.get("gerekce") or "").strip(),
+        })
+        if len(out) >= 12:
+            break
+    return out
+
+
+def _bucket_for_training(t):
+    blob = " ".join([
+        t.get("training_name") or "",
+        t.get("yetkinlik") or "",
+        t.get("gerekce") or "",
+    ]).lower()
+    if any(k in blob for k in _LIDERLIK_KW):
+        return 2
+    if any(k in blob for k in _UYGULAMA_KW):
+        return 1
+    if any(k in blob for k in _TEMEL_KW):
+        return 0
+    return 1  # varsayilan: uygulama
+
+
+def roadmap_fallback(hedef, yetkinlikler, trainings):
+    """Claude basarisizsa egitimleri Temel / Uygulama / Liderlik kovalarina bol."""
+    buckets = [[], [], []]
+    for t in trainings:
+        buckets[_bucket_for_training(t)].append(t["training_id"])
+
+    # Bos kova kalmasin: egitimleri sirayla dagit
+    if trainings and not any(buckets):
+        for i, t in enumerate(trainings):
+            buckets[i % 3].append(t["training_id"])
+    elif trainings:
+        used = set(x for b in buckets for x in b)
+        orphan = [t["training_id"] for t in trainings if t["training_id"] not in used]
+        for i, tid in enumerate(orphan):
+            buckets[i % 3].append(tid)
+
+    titles = [
+        ("Temel beceriler", "Hedefine giden yolda sağlam bir temel oluştur."),
+        ("Uygulama ve pratik", "Öğrendiklerini gerçek senaryolarda uygula."),
+        ("Liderlik ve ilerleme", "Rolüne yaklaşmak için yönetim ve karar becerilerini güçlendir."),
+    ]
+    zayif = [y for y in (yetkinlikler or []) if isinstance(y, dict)]
+    if zayif:
+        adlar = [str(y.get("yetkinlik") or "")[:60] for y in zayif[:3] if y.get("yetkinlik")]
+        if adlar:
+            titles[1] = (
+                "Gelişim alanlarını güçlendir",
+                "Öncelikli alanlar: " + ", ".join(adlar) + ".",
+            )
+
+    steps = []
+    for i, (title, desc) in enumerate(titles):
+        steps.append({
+            "title": title,
+            "description": desc,
+            "training_ids": buckets[i],
+        })
+    if hedef:
+        steps[0]["description"] = (
+            f"Hedefin: {hedef[:160]}. " + steps[0]["description"]
+        )[:280]
+    return steps
+
+
+def _sanitize_roadmap_steps(raw_steps, valid_ids):
+    """3-5 adim, sadece bilinen training_id, tarih/maas vaadi yok sayilir."""
+    if not isinstance(raw_steps, list):
+        return None
+    steps = []
+    for item in raw_steps:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()[:120]
+        desc = str(item.get("description") or "").strip()[:400]
+        if not title:
+            continue
+        # Kesin tarih / maas vaadi iceren aciklamalari yumusat
+        low = (title + " " + desc).lower()
+        if re.search(r"\b\d{4}\b.*maas|maas.*\₺|\$\d|garantili is", low):
+            desc = re.sub(r"(?i)maaş[^.]*\.?", "", desc).strip() or desc
+        ids_raw = item.get("training_ids") or item.get("training_id") or []
+        if isinstance(ids_raw, str):
+            ids_raw = [ids_raw]
+        tids = []
+        for x in ids_raw:
+            s = str(x).strip()
+            if s in valid_ids and s not in tids:
+                tids.append(s)
+        steps.append({
+            "title": title,
+            "description": desc,
+            "training_ids": tids,
+        })
+        if len(steps) >= 5:
+            break
+    if len(steps) < 3:
+        return None
+    return steps[:5]
+
+
+def yol_haritasi_uret(hedef, yetkinlikler, trainings, a):
+    """
+    Claude'dan 3-5 adimlik JSON roadmap.
+    Basarisizsa Temel/Uygulama/Liderlik fallback.
+    Donus: { steps, source }
+    """
+    trainings = _normalize_trainings_payload(trainings)
+    hedef = str(hedef or "").strip()[:400]
+    yetkinlikler = yetkinlikler if isinstance(yetkinlikler, list) else []
+    valid_ids = {t["training_id"] for t in trainings}
+
+    if not trainings:
+        # Egitim yoksa yine 3 adimlik iskelet
+        return {
+            "steps": roadmap_fallback(hedef, yetkinlikler, []),
+            "source": "fallback",
+        }
+
+    y_satir = "\n".join(
+        f"- {y.get('yetkinlik','')}: {y.get('puan','?')}/5 ({y.get('seviye','')})"
+        for y in yetkinlikler if isinstance(y, dict) and y.get("yetkinlik")
+    ) or "(yok)"
+    egitim_json = json.dumps(
+        [{"training_id": t["training_id"], "ad": t["training_name"]} for t in trainings],
+        ensure_ascii=False,
+    )
+
+    sistem = """Sen CareerPick kariyer danismansin.
+Gorev: kullanicinin kariyer hedefi icin 3 ile 5 adimlik basit bir yol haritasi uret.
+Her adima verilen egitim listesinden 0 veya daha fazla training_id bagla.
+Listede olmayan training_id UYDURMA.
+Kesin tarih, maas rakami veya is garantisi VERME.
+Sadece JSON dondur, baska metin yok:
+{"steps":[{"title":"...","description":"...","training_ids":["..."]}]}
+Kurallar: steps uzunlugu 3-5; title kisa; description 1-2 cumle."""
+
+    user = (
+        f"KARİYER HEDEFİ:\n{hedef or '(belirtilmedi)'}\n\n"
+        f"ZAYIF / GELİŞTİRİLECEK YETKİNLİKLER:\n{y_satir}\n\n"
+        f"ÖNERİLEN EĞİTİMLER (JSON):\n{egitim_json}"
+    )
+
+    try:
+        r = a.messages.create(
+            model=CLAUDE_MODEL, max_tokens=1600, system=sistem,
+            messages=[{"role": "user", "content": user}],
+        )
+        txt = r.content[0].text.strip()
+        d = _json_obj_bul(txt)
+        if d:
+            cleaned = _sanitize_roadmap_steps(d.get("steps"), valid_ids)
+            if cleaned:
+                # Hic egitim baglanmadiysa fallback'e dus
+                if any(s["training_ids"] for s in cleaned) or not valid_ids:
+                    return {"steps": cleaned, "source": "claude"}
+    except Exception as e:
+        print("[ERROR] roadmap claude:", repr(e))
+
+    return {
+        "steps": roadmap_fallback(hedef, yetkinlikler, trainings),
+        "source": "fallback",
+    }
+
+
 # ── HTTP ───────────────────────────────────────────────────────────────────────
 
 def _allowed_origin(origin):
@@ -591,6 +790,16 @@ class handler(BaseHTTPRequestHandler):
                     "recommendations": recs,
                     "yetkinlikler": yetkinlikler,
                 })
+
+            elif action == "roadmap":
+                hedef = str(data.get("hedef") or "").strip()[:400]
+                yetkinlikler = data.get("yetkinlikler") if isinstance(data.get("yetkinlikler"), list) else []
+                trainings = data.get("trainings") if isinstance(data.get("trainings"), list) else []
+                if not hedef and not trainings:
+                    return self._json(400, {"error": "Hedef veya egitim listesi gerekli."})
+                a, _, _ = _clients()
+                result = yol_haritasi_uret(hedef, yetkinlikler, trainings, a)
+                return self._json(200, result)
 
             else:
                 return self._json(400, {"error": "Gecersiz action."})

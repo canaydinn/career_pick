@@ -90,7 +90,7 @@ export default async function handler(req, res) {
   for (const profile of profiles || []) {
     const { data: trainings, error: tErr } = await supabase
       .from("recommended_trainings")
-      .select("id, training_name, status, started_at, recommended_at, last_reminded_at, link")
+      .select("id, training_name, status, started_at, recommended_at, last_reminded_at, link, step_id")
       .eq("user_id", profile.id);
 
     if (tErr || !trainings?.length) {
@@ -107,6 +107,16 @@ export default async function handler(req, res) {
       skipped++;
       continue;
     }
+
+    const { data: steps } = await supabase
+      .from("roadmap_steps")
+      .select("id, step_order, title, status")
+      .eq("user_id", profile.id)
+      .eq("archived", false)
+      .order("step_order", { ascending: true });
+
+    const activeStep = (steps || []).find((s) => s.status === "aktif") || null;
+    const stepTotal = (steps || []).length;
 
     const continueItems = trainings.filter(
       (t) =>
@@ -129,6 +139,14 @@ export default async function handler(req, res) {
 
     const name = profile.display_name || "Merhaba";
     const lines = [];
+    if (activeStep) {
+      lines.push(
+        `<p><strong>Yol haritanın ${activeStep.step_order}. adımındasın` +
+          (stepTotal ? ` / ${stepTotal}` : "") +
+          `:</strong> ${escapeHtml(activeStep.title)}</p>`
+      );
+      lines.push("<p>Devam etmek ister misin?</p>");
+    }
     if (continueItems.length) {
       lines.push("<p><strong>Devam eden eğitimlerin:</strong></p><ul>");
       continueItems.slice(0, 3).forEach((t) => {
@@ -142,11 +160,15 @@ export default async function handler(req, res) {
     if (nextUp) {
       lines.push(`<p>Sıradaki önerin: <em>${escapeHtml(nextUp.training_name)}</em></p>`);
     }
-    lines.push(`<p><a href="${base}/profil.html">Öğrenme planına git →</a></p>`);
+    lines.push(`<p><a href="${base}/profil.html">Yol haritana git →</a></p>`);
+
+    const subject = activeStep
+      ? `Career Pick — yol haritanın ${activeStep.step_order}. adımı`
+      : "Career Pick — bu haftaki öğrenme planın";
 
     const mail = await sendResend({
       to: profile.email,
-      subject: "Career Pick — bu haftaki öğrenme planın",
+      subject,
       html: `<div style="font-family:sans-serif;line-height:1.5"><p>${escapeHtml(name)},</p>${lines.join("")}</div>`,
     });
 

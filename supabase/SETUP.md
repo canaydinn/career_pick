@@ -38,8 +38,8 @@ Lokal için `.env.local` içine aynı anahtarları yaz; `scripts/dev_server.py` 
 ## 5. Doğrulama
 
 1. `kariyer sohbet.html` → **Gmail ile giriş**
-2. Sohbeti bitir → Supabase Table Editor’da `user_answers`, `recommended_trainings`, `user_insights` satırları
-3. `profil.html` → eğitimler ve progress bar
+2. Sohbeti bitir → Supabase Table Editor’da `user_answers`, `recommended_trainings`, `user_insights`, `roadmap_steps` satırları
+3. `profil.html` → yol haritası zaman çizelgesi, eğitimler ve progress bar
 
 ## 6. Öğrenme planı migration (v0.2+)
 
@@ -50,6 +50,18 @@ SQL Editor’da ayrıca çalıştır:
 Bu dosya ekler:
 - `recommended_trainings.link`, `started_at`, `completed_at`, `last_reminded_at`
 - `profiles.email_reminders_opt_in` (varsayılan `false`)
+
+## 6b. Yol haritası migration (v0.3+)
+
+SQL Editor’da çalıştır:
+
+`migrations/20260718230000_roadmap_steps.sql`
+
+Bu dosya ekler:
+- `roadmap_steps` (step_order, title, description, status, archived)
+- `recommended_trainings.step_id` (nullable FK)
+
+Sohbet bitince Claude (veya fallback) 3–5 adım üretir; profilde dikey zaman çizelgesi olarak görünür.
 
 ## 7. Haftalık e-posta hatırlatması (opsiyonel)
 

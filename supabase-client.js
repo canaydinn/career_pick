@@ -342,11 +342,191 @@
   }
 
   async function markTrainingStarted(id) {
-    return updateTrainingStatus(id, "devam_ediyor");
+    const res = await updateTrainingStatus(id, "devam_ediyor");
+    if (res.ok) await syncRoadmapProgress();
+    return res;
   }
 
   async function markTrainingCompleted(id) {
-    return updateTrainingStatus(id, "tamamlandi");
+    const res = await updateTrainingStatus(id, "tamamlandi");
+    if (res.ok) await syncRoadmapProgress();
+    return res;
+  }
+
+  async function fetchCareerGoal() {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return "";
+    const { data, error } = await c
+      .from("user_answers")
+      .select("answer_text, created_at")
+      .eq("user_id", user.id)
+      .eq("question_id", "kariyer_hedefi")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      console.warn("[CPAuth] fetchCareerGoal:", error.message);
+      return "";
+    }
+    return (data && data[0] && data[0].answer_text) || "";
+  }
+
+  async function fetchActiveRoadmap() {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return [];
+    const { data, error } = await c
+      .from("roadmap_steps")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("archived", false)
+      .order("step_order", { ascending: true });
+    if (error) {
+      console.warn("[CPAuth] fetchActiveRoadmap:", error.message);
+      return [];
+    }
+    return data || [];
+  }
+
+  async function archiveActiveRoadmaps() {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return { ok: false };
+    const { error } = await c
+      .from("roadmap_steps")
+      .update({ archived: true })
+      .eq("user_id", user.id)
+      .eq("archived", false);
+    if (error) {
+      console.warn("[CPAuth] archiveActiveRoadmaps:", error.message);
+      return { ok: false };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * steps: [{ title, description, training_ids: string[] }]
+   * Once mevcut roadmap arsivlenir, yeni 3-5 adim yazilir, egitimlere step_id baglanir.
+   */
+  async function saveRoadmap(steps) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !Array.isArray(steps) || !steps.length) {
+      return { ok: false, reason: "auth_or_empty" };
+    }
+
+    const cleaned = steps.slice(0, 5).map((s, i) => ({
+      title: String(s.title || "").trim() || ("Adım " + (i + 1)),
+      description: String(s.description || "").trim(),
+      training_ids: Array.isArray(s.training_ids) ? s.training_ids.map(String) : [],
+    })).filter((s) => s.title);
+
+    if (cleaned.length < 3) {
+      return { ok: false, reason: "too_few_steps" };
+    }
+
+    await archiveActiveRoadmaps();
+
+    const rows = cleaned.map((s, i) => ({
+      user_id: user.id,
+      step_order: i + 1,
+      title: s.title.slice(0, 160),
+      description: s.description.slice(0, 500) || null,
+      status: i === 0 ? "aktif" : "bekliyor",
+      archived: false,
+    }));
+
+    const { data: inserted, error } = await c
+      .from("roadmap_steps")
+      .insert(rows)
+      .select();
+    if (error || !inserted) {
+      console.warn("[CPAuth] saveRoadmap insert:", error && error.message);
+      return { ok: false, reason: error ? error.message : "insert" };
+    }
+
+    const byOrder = {};
+    inserted.forEach((row) => { byOrder[row.step_order] = row; });
+
+    // Once bu kullanicinin egitimlerinde eski step_id'leri temizleme: yeni eslestirme yap
+    for (let i = 0; i < cleaned.length; i++) {
+      const step = byOrder[i + 1];
+      if (!step) continue;
+      const ids = cleaned[i].training_ids.filter(Boolean);
+      for (const tid of ids) {
+        const { error: uErr } = await c
+          .from("recommended_trainings")
+          .update({ step_id: step.id })
+          .eq("user_id", user.id)
+          .eq("training_id", tid);
+        if (uErr) console.warn("[CPAuth] saveRoadmap link:", uErr.message);
+      }
+    }
+
+    await syncRoadmapProgress();
+    return { ok: true, steps: inserted };
+  }
+
+  /** Adimdaki tum egitimler tamamlandiysa adimi bitti yap, sonrakini aktif et. */
+  async function syncRoadmapProgress() {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return { ok: false };
+
+    const steps = await fetchActiveRoadmap();
+    if (!steps.length) return { ok: true };
+
+    const { data: trainings } = await c
+      .from("recommended_trainings")
+      .select("id, step_id, status")
+      .eq("user_id", user.id);
+
+    const byStep = {};
+    (trainings || []).forEach((t) => {
+      if (!t.step_id) return;
+      if (!byStep[t.step_id]) byStep[t.step_id] = [];
+      byStep[t.step_id].push(t);
+    });
+
+    let firstOpen = null;
+    for (const step of steps) {
+      const linked = byStep[step.id] || [];
+      const allDone = linked.length > 0 && linked.every((t) => t.status === "tamamlandi");
+      if (allDone) {
+        if (step.status !== "bitti") {
+          await c.from("roadmap_steps").update({ status: "bitti" })
+            .eq("id", step.id).eq("user_id", user.id);
+        }
+      } else if (firstOpen === null) {
+        firstOpen = step;
+      }
+    }
+
+    for (const step of steps) {
+      const linked = byStep[step.id] || [];
+      const allDone = linked.length > 0 && linked.every((t) => t.status === "tamamlandi");
+      if (allDone) continue;
+      const nextStatus = firstOpen && firstOpen.id === step.id ? "aktif" : "bekliyor";
+      if (step.status !== nextStatus) {
+        await c.from("roadmap_steps").update({ status: nextStatus })
+          .eq("id", step.id).eq("user_id", user.id);
+      }
+    }
+    return { ok: true };
+  }
+
+  function stepProgressLabel(steps) {
+    const list = Array.isArray(steps) ? steps : [];
+    if (!list.length) return null;
+    const done = list.filter((s) => s.status === "bitti").length;
+    const active = list.find((s) => s.status === "aktif");
+    return {
+      done,
+      total: list.length,
+      activeOrder: active ? active.step_order : (done >= list.length ? list.length : 1),
+      activeTitle: active ? active.title : "",
+      label: (active ? active.step_order : Math.min(done + 1, list.length)) + " / " + list.length,
+    };
   }
 
   async function fetchProfile() {
@@ -386,12 +566,15 @@
     return Math.round((done / trainings.length) * 100);
   }
 
-  /** Uygulama ici "Bu hafta yapman gerekenler" listesi */
-  function getWeekActions(trainings) {
+  /** Uygulama ici "Bu hafta yapman gerekenler" listesi (+ aktif adim) */
+  function getWeekActions(trainings, roadmapSteps) {
     const list = Array.isArray(trainings) ? trainings : [];
+    const steps = Array.isArray(roadmapSteps) ? roadmapSteps : [];
     const now = Date.now();
     const day = 24 * 60 * 60 * 1000;
     const actions = [];
+    const activeStep = steps.find((s) => s.status === "aktif") || null;
+    const stepInfo = stepProgressLabel(steps);
 
     list.forEach((t) => {
       if (t.status === "devam_ediyor") {
@@ -417,9 +600,25 @@
       }
     });
 
-    actions.sort((a, b) => a.priority - b.priority);
+    // Aktif adıma bağlı eğitimleri öne al
+    if (activeStep) {
+      actions.sort((a, b) => {
+        const aActive = a.training.step_id === activeStep.id ? 0 : 1;
+        const bActive = b.training.step_id === activeStep.id ? 0 : 1;
+        if (aActive !== bActive) return aActive - bActive;
+        return a.priority - b.priority;
+      });
+    } else {
+      actions.sort((a, b) => a.priority - b.priority);
+    }
+
     const next = list.find((t) => t.status !== "tamamlandi") || null;
-    return { actions: actions.slice(0, 5), next };
+    return {
+      actions: actions.slice(0, 5),
+      next,
+      activeStep,
+      stepInfo,
+    };
   }
 
   global.CPAuth = {
@@ -441,6 +640,12 @@
     updateTrainingStatus,
     markTrainingStarted,
     markTrainingCompleted,
+    fetchCareerGoal,
+    fetchActiveRoadmap,
+    archiveActiveRoadmaps,
+    saveRoadmap,
+    syncRoadmapProgress,
+    stepProgressLabel,
     fetchProfile,
     setEmailRemindersOptIn,
     statusProgress,
