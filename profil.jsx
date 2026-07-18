@@ -19,24 +19,42 @@ function ProfilPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    let alive = true;
     let off = () => {};
+
+    async function applyUser(u) {
+      if (!alive) return;
+      setUser(u);
+      if (u) {
+        const p = await CPAuth.ensureProfile(u);
+        if (!alive) return;
+        setProfile(p || (await CPAuth.fetchProfile()));
+        if (!alive) return;
+        setTrainings(await CPAuth.fetchTrainings());
+      } else {
+        setProfile(null);
+        setTrainings([]);
+      }
+    }
+
     (async () => {
       await CPAuth.init();
+      if (!alive) return;
       setConfigured(CPAuth.isConfigured());
+
+      // Sayfa yenile / index'ten donuste oturumu once dogrudan oku
+      const existing = await CPAuth.getUser();
+      if (!alive) return;
+      await applyUser(existing);
       setReady(true);
-      off = CPAuth.onAuthStateChange(async (u) => {
-        setUser(u);
-        if (u) {
-          const p = await CPAuth.ensureProfile(u);
-          setProfile(p || (await CPAuth.fetchProfile()));
-          setTrainings(await CPAuth.fetchTrainings());
-        } else {
-          setProfile(null);
-          setTrainings([]);
-        }
-      });
+
+      off = CPAuth.onAuthStateChange((u) => { applyUser(u); });
     })();
-    return () => off();
+
+    return () => {
+      alive = false;
+      off();
+    };
   }, []);
 
   async function login() {

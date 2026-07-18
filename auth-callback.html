@@ -26,12 +26,14 @@
       const err = document.getElementById("err");
       try {
         await CPAuth.init();
-        const session = await CPAuth.getSession();
-        if (!session) {
-          // hash/query ile session gelene kadar kısa bekle
-          await new Promise((r) => setTimeout(r, 800));
+        // PKCE code exchange icin kisa bekleme + birka retry
+        let user = null;
+        for (let i = 0; i < 5; i++) {
+          const session = await CPAuth.getSession();
+          user = session && session.user ? session.user : await CPAuth.getUser();
+          if (user) break;
+          await new Promise((r) => setTimeout(r, 400));
         }
-        const user = await CPAuth.getUser();
         if (!user) throw new Error("Oturum bulunamadi");
         await CPAuth.ensureProfile(user);
         const next = sessionStorage.getItem("cp_auth_next") || "profil.html";

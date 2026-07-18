@@ -53,15 +53,31 @@
           configured = false;
           return null;
         }
+        // Sabit storageKey: sayfa degisse bile ayni localStorage kaydini kullan
+        const storageKey = "cp-supabase-auth";
+        try {
+          // Eski varsayilan sb-<ref>-auth-token kaydini bir kez tasi
+          if (!global.localStorage.getItem(storageKey)) {
+            const host = new URL(cfg.supabaseUrl).hostname || "";
+            const ref = host.split(".")[0];
+            const legacy = ref ? global.localStorage.getItem("sb-" + ref + "-auth-token") : null;
+            if (legacy) global.localStorage.setItem(storageKey, legacy);
+          }
+        } catch (e) { /* ignore */ }
+
         client = global.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
           auth: {
             persistSession: true,
             autoRefreshToken: true,
             detectSessionInUrl: true,
+            flowType: "pkce",
             storage: global.localStorage,
+            storageKey,
           },
         });
         configured = true;
+        // Arka planda token yenilemeyi acik tut
+        try { client.auth.startAutoRefresh(); } catch (e) { /* ignore */ }
         return client;
       } catch (e) {
         console.warn("[CPAuth] init:", e.message || e);
@@ -115,9 +131,10 @@
     const c = await getClient();
     if (!c) throw new Error("Supabase yapilandirilmadi");
     const target = redirectTo || (global.location.origin + "/auth-callback.html");
+    // prompt:consent kullanma — her seferinde yeniden onay isteyip oturumu bozabiliyor
     const { error } = await c.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: target, queryParams: { access_type: "offline", prompt: "consent" } },
+      options: { redirectTo: target },
     });
     if (error) throw error;
   }
@@ -125,20 +142,41 @@
   async function signOut() {
     const c = await getClient();
     if (!c) return;
-    await c.auth.signOut();
+    // Yalniz bu tarayici oturumu; global sign-out diger cihazlari da dusurmesin
+    await c.auth.signOut({ scope: "local" });
   }
 
   function onAuthStateChange(cb) {
-    let unsub = null;
-    init().then((c) => {
-      if (!c) { cb(null); return; }
-      const { data } = c.auth.onAuthStateChange((_event, session) => {
+    let unsub = () => {};
+    let cancelled = false;
+
+    init().then(async (c) => {
+      if (cancelled) return;
+      if (!c) {
+        cb(null);
+        return;
+      }
+
+      // Once localStorage'dan hydrate et; INITIAL_SESSION null yarisiyla
+      // yanlis "cikis yapildi" gostermemek icin
+      const { data: initial } = await c.auth.getSession();
+      if (!cancelled) cb(initial.session ? initial.session.user : null);
+
+      const { data } = c.auth.onAuthStateChange((event, session) => {
+        if (cancelled) return;
+        // getSession ile zaten isledik
+        if (event === "INITIAL_SESSION") return;
         cb(session ? session.user : null);
       });
-      unsub = () => data.subscription.unsubscribe();
-      c.auth.getSession().then(({ data: d }) => cb(d.session ? d.session.user : null));
+      unsub = () => {
+        try { data.subscription.unsubscribe(); } catch (e) { /* ignore */ }
+      };
     });
-    return () => { if (unsub) unsub(); };
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }
 
   async function saveAnswer({ questionId, questionText, answerText, sessionId }) {

@@ -139,18 +139,27 @@ function KariyerSohbet() {
   const taRef = useRefK(null);
 
   useEffectK(() => {
+    let alive = true;
     let off = () => {};
     if (!window.CPAuth) { setAuthReady(true); setAuthConfigured(false); return; }
     (async () => {
       await CPAuth.init();
+      if (!alive) return;
       setAuthConfigured(!!CPAuth.isConfigured());
+      // Index / profil arasinda gezerken oturumu localStorage'dan geri yukle
+      const existing = await CPAuth.getUser();
+      if (!alive) return;
+      setAuthUser(existing);
+      if (existing) await CPAuth.ensureProfile(existing);
+      if (!alive) return;
       setAuthReady(true);
       off = CPAuth.onAuthStateChange(async (u) => {
+        if (!alive) return;
         setAuthUser(u);
         if (u) await CPAuth.ensureProfile(u);
       });
     })();
-    return () => off();
+    return () => { alive = false; off(); };
   }, []);
 
   const qMeta = (i) => questions[i] || null;
