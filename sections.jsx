@@ -1,4 +1,4 @@
-/* global React, CPIcon, CPLogo, CPChatbot */
+/* global React, CPIcon, CPLogo, CPChatbot, CPAuth */
 const { useState: useStateS, useEffect: useEffectS, useRef: useRefS } = React;
 const Ic = window.CPIcon;
 
@@ -8,12 +8,35 @@ function useReveal() {}
 /* ---------- Nav ---------- */
 function Nav({ c, lang, setLang, base }) {
   const [scrolled, setScrolled] = useStateS(false);
+  const [authUser, setAuthUser] = useStateS(null);
+  const [authReady, setAuthReady] = useStateS(false);
   const b = base || "";
   useEffectS(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+  useEffectS(() => {
+    let alive = true;
+    let off = () => {};
+    if (!window.CPAuth) {
+      setAuthReady(true);
+      return;
+    }
+    (async () => {
+      await CPAuth.init();
+      if (!alive) return;
+      const existing = await CPAuth.getUser();
+      if (!alive) return;
+      setAuthUser(existing);
+      setAuthReady(true);
+      off = CPAuth.onAuthStateChange((u) => {
+        if (alive) setAuthUser(u);
+      });
+    })();
+    return () => { alive = false; off(); };
+  }, []);
+  const loggedIn = !!(authReady && authUser);
   return (
     <nav className={"nav" + (scrolled ? " scrolled" : "")}>
       <div className="wrap nav-in">
@@ -29,7 +52,15 @@ function Nav({ c, lang, setLang, base }) {
             <button className={lang === "tr" ? "on" : ""} onClick={() => setLang("tr")}>TR</button>
             <button className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}>EN</button>
           </div>
-          <a href="kariyer%20sohbet.html" className="btn btn-primary" style={{ padding: "11px 20px", fontSize: 14 }}>{c.nav.cta}</a>
+          {loggedIn ? (
+            <a href="profil.html" className="btn btn-primary" style={{ padding: "11px 20px", fontSize: 14 }}>
+              {c.nav.profile || "Profil"}
+            </a>
+          ) : (
+            <a href="kariyer%20sohbet.html" className="btn btn-primary" style={{ padding: "11px 20px", fontSize: 14 }}>
+              {c.nav.cta}
+            </a>
+          )}
         </div>
       </div>
     </nav>

@@ -1,7 +1,7 @@
 // Career Pick — bilingual content (TR / EN)
 window.CP_CONTENT = {
   tr: {
-    nav: { features: "Özellikler", how: "Nasıl çalışır", reviews: "Yorumlar", faq: "SSS", cta: "Ücretsiz başla" },
+    nav: { features: "Özellikler", how: "Nasıl çalışır", reviews: "Yorumlar", faq: "SSS", cta: "Ücretsiz başla", profile: "Profil" },
     hero: {
       badge: "Yapay zekâ destekli kariyer koçun",
       title: ["Kariyerinin", "bir sonraki hamlesini", "akıllıca yap."],
@@ -80,7 +80,7 @@ window.CP_CONTENT = {
     },
   },
   en: {
-    nav: { features: "Features", how: "How it works", reviews: "Reviews", faq: "FAQ", cta: "Start free" },
+    nav: { features: "Features", how: "How it works", reviews: "Reviews", faq: "FAQ", cta: "Start free", profile: "Profile" },
     hero: {
       badge: "Your AI-powered career coach",
       title: ["Make your", "next career move", "the smart way."],
