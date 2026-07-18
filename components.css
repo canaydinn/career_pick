@@ -155,6 +155,23 @@
 .cs-skill-score { font-size: 13px; font-weight: 600; color: var(--accent-2); }
 .cs-skill-note { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
 
+.cs-compare { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; margin-bottom: 22px; }
+.cs-compare-first { margin-bottom: 18px; }
+.cs-compare h3 { font-family: var(--font-display); font-size: 17px; margin: 0 0 6px; }
+.cs-compare-summary { font-size: 14px; color: var(--text); margin: 0 0 14px; line-height: 1.45; font-weight: 600; }
+.cs-compare-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.cs-compare-item { border-top: 1px solid var(--line); padding-top: 10px; }
+.cs-compare-item:first-child { border-top: none; padding-top: 0; }
+.cs-compare-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.cs-compare-scores { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.cs-compare-delta { font-weight: 800; }
+.cs-compare-delta.improved { color: #6ec4a0; }
+.cs-compare-delta.declined { color: #e8a860; }
+.cs-compare-delta.unchanged { color: var(--faint); }
+.cs-compare-note { font-size: 12.5px; color: var(--faint); }
+.cs-compare-item.improved .cs-compare-note { color: #6ec4a0; }
+.cs-compare-item.declined .cs-compare-note { color: #e8a860; }
+
 .cs-answers-review { margin-top: 36px; border-top: 1px solid var(--line); padding-top: 26px; }
 .cs-answers-review h3 { font-family: var(--font-display); font-size: 18px; margin: 0 0 6px; }
 .cs-answers-hint { color: var(--faint); font-size: 13px; margin: 0 0 16px; }
@@ -241,6 +258,12 @@
 .pf-goal { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 20px; margin-bottom: 18px; }
 .pf-goal h3 { font-family: var(--font-display); font-size: 15px; margin: 0 0 8px; color: var(--muted); }
 .pf-goal p { margin: 0; font-size: 16px; line-height: 1.45; font-weight: 600; }
+
+.pf-compare-summary { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 20px; margin-bottom: 18px; }
+.pf-compare-summary h3 { font-family: var(--font-display); font-size: 15px; margin: 0 0 8px; color: var(--muted); }
+.pf-compare-summary p { margin: 0; font-size: 14.5px; line-height: 1.45; }
+.pf-compare-summary .up { color: #6ec4a0; font-weight: 700; }
+.pf-compare-summary .down { color: #e8a860; font-weight: 700; }
 
 .pf-roadmap { margin-bottom: 22px; }
 .pf-roadmap-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }

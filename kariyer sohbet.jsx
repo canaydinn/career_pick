@@ -19,10 +19,10 @@ async function persistAnswer(meta, answerText) {
 }
 
 async function persistResults(recs, skills, cevaplar) {
-  if (!window.CPAuth) return;
+  if (!window.CPAuth) return { comparison: null };
   try {
     const user = await CPAuth.getUser();
-    if (!user) return;
+    if (!user) return { comparison: null };
     const trainingsPayload = Array.isArray(recs)
       ? recs.map((r) => ({
           training_id: r.link || r.ad,
@@ -45,11 +45,40 @@ async function persistResults(recs, skills, cevaplar) {
           sk.yorum || "",
         ].filter(Boolean).join(" — "),
       })));
+      await CPAuth.saveCompetencySnapshot(skills, CPAuth.getSessionId());
     }
     await persistRoadmap(trainingsPayload, skills, cevaplar);
+
+    let comparison = null;
+    if (Array.isArray(skills) && skills.length) {
+      comparison = await CPAuth.compareLastCompetencySnapshots();
+      if (comparison && comparison.hasComparison && comparison.rows.length) {
+        try {
+          const r = await fetch("/api/sohbet", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "compare_summary", rows: comparison.rows }),
+          });
+          if (r.ok) {
+            const data = await r.json();
+            if (data && data.summary) comparison.summaryLine = data.summary;
+          }
+        } catch (e) { /* opsiyonel */ }
+      }
+    }
+    return { comparison };
   } catch (e) {
     console.warn("[SOHBET] persistResults:", e.message || e);
+    return { comparison: null };
   }
+}
+
+function labelYetkinlik(key, skills) {
+  if (!key) return "";
+  const list = Array.isArray(skills) ? skills : [];
+  const hit = list.find((s) => CPAuth.normalizeYetkinlikAdi(s.yetkinlik) === key);
+  if (hit && hit.yetkinlik) return hit.yetkinlik;
+  return key.charAt(0).toLocaleUpperCase("tr-TR") + key.slice(1);
 }
 
 async function persistRoadmap(trainings, skills, cevaplar) {
@@ -172,6 +201,7 @@ function KariyerSohbet() {
   const [recomputing, setRecomputing] = useStateK(false);
   const [recs, setRecs] = useStateK([]);
   const [skills, setSkills] = useStateK([]);
+  const [skillCompare, setSkillCompare] = useStateK(null);
   const [selected, setSelected] = useStateK(() => ProfileStore.getAll());
   const [authUser, setAuthUser] = useStateK(null);
   const [authReady, setAuthReady] = useStateK(false);
@@ -323,11 +353,13 @@ function KariyerSohbet() {
       const nextSkills = Array.isArray(data.yetkinlikler) ? data.yetkinlikler : [];
       setRecs(nextRecs);
       setSkills(nextSkills);
-      await persistResults(nextRecs, nextSkills, cevaplar);
+      const persisted = await persistResults(nextRecs, nextSkills, cevaplar);
+      setSkillCompare((persisted && persisted.comparison) || null);
     } catch (e) {
       console.error("[SOHBET] recommend:", e.message);
       setRecs([]);
       setSkills([]);
+      setSkillCompare(null);
     } finally {
       setPhase("result");
     }
@@ -476,6 +508,7 @@ function KariyerSohbet() {
     setRecomputing(false);
     setRecs([]);
     setSkills([]);
+    setSkillCompare(null);
     setScenarioQs([]);
     setScenariosReady(false);
     setLoadingScenarios(false);
@@ -625,6 +658,52 @@ function KariyerSohbet() {
 
             {skills.length > 0 && (
               <div className="cs-skills">
+                {skillCompare && skillCompare.isFirst ? (
+                  <div className="cs-compare cs-compare-first">
+                    <h3>{S.result.compareTitle}</h3>
+                    <p className="cs-skills-hint">{S.result.compareFirst}</p>
+                  </div>
+                ) : null}
+                {skillCompare && skillCompare.hasComparison ? (
+                  <div className="cs-compare">
+                    <h3>{S.result.compareTitle}</h3>
+                    <p className="cs-skills-hint">{S.result.compareHint}</p>
+                    {skillCompare.summaryLine ? (
+                      <p className="cs-compare-summary">{skillCompare.summaryLine}</p>
+                    ) : null}
+                    <ul className="cs-compare-list">
+                      {skillCompare.rows.map((row, i) => {
+                        const name = labelYetkinlik(row.yetkinlik, skills);
+                        const deltaTxt = row.delta == null
+                          ? ""
+                          : (row.delta > 0 ? "+" : "") + row.delta;
+                        let note = "";
+                        if (row.status === "improved") note = S.result.compareUp;
+                        else if (row.status === "declined") note = S.result.compareDown;
+                        else if (row.status === "unchanged") note = S.result.compareSame;
+                        else if (row.status === "new") note = S.result.compareNew;
+                        else note = S.result.compareUnmatched;
+                        return (
+                          <li className={"cs-compare-item " + row.status} key={i}>
+                            <div className="cs-compare-name">{name}</div>
+                            <div className="cs-compare-scores">
+                              {row.previous != null ? (
+                                <span>{S.result.comparePrev}: {row.previous}</span>
+                              ) : (
+                                <span>{S.result.comparePrev}: —</span>
+                              )}
+                              <span>{S.result.compareNow}: {row.current != null ? row.current : "—"}</span>
+                              {row.delta != null ? (
+                                <span className={"cs-compare-delta " + row.status}>{deltaTxt}</span>
+                              ) : null}
+                            </div>
+                            <div className="cs-compare-note">{note}</div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
                 <h3>{S.result.skillsTitle}</h3>
                 <p className="cs-skills-hint">{S.result.skillsHint}</p>
                 <ul className="cs-skills-list">

@@ -9,6 +9,7 @@ Islemler (action):
 2) scenarios — profil yanitlarina gore RAG'den meta_senaryo ceker
 3) recommend — profil + senaryo puanlariyla egitim onerir
 4) roadmap   — hedef + yetkinlik + egitimlerden 3-5 adimlik yol haritasi
+5) compare_summary — onceki vs simdi yetkinlik farkindan tek cumle (opsiyonel)
 
 Ortam: OPENAI_API_KEY, ANTHROPIC_API_KEY, QDRANT_URL, QDRANT_API_KEY,
 (ops.) CLAUDE_MODEL, ALLOWED_ORIGINS
@@ -800,6 +801,43 @@ class handler(BaseHTTPRequestHandler):
                 a, _, _ = _clients()
                 result = yol_haritasi_uret(hedef, yetkinlikler, trainings, a)
                 return self._json(200, result)
+
+            elif action == "compare_summary":
+                rows = data.get("rows") if isinstance(data.get("rows"), list) else []
+                if not rows:
+                    return self._json(200, {"summary": ""})
+                a, _, _ = _clients()
+                improved = [
+                    r for r in rows
+                    if isinstance(r, dict) and r.get("status") == "improved"
+                ]
+                paket = json.dumps(rows[:12], ensure_ascii=False)[:2500]
+                sistem = (
+                    "CareerPick icin tek cumle Turkce ozet yaz. "
+                    "Kesin bilimsel olcum iddiasinda bulunma; yaklasik gelisim sinyali de. "
+                    "En cok ilerleme varsa onu nazikce belirt. Suclamayici dil kullanma. "
+                    "Sadece 1 cumle, baska metin yok."
+                )
+                try:
+                    r = a.messages.create(
+                        model=CLAUDE_MODEL, max_tokens=120, system=sistem,
+                        messages=[{"role": "user", "content": f"KARSILASTIRMA:\n{paket}"}],
+                    )
+                    summary = (r.content[0].text or "").strip().split("\n")[0][:220]
+                    if improved and not summary:
+                        top = max(improved, key=lambda x: float(x.get("delta") or 0))
+                        ad = top.get("yetkinlik") or "bir alanda"
+                        summary = f"Bu turda en belirgin ilerleme sinyali {ad} alanında görünüyor."
+                    return self._json(200, {"summary": summary})
+                except Exception as e:
+                    print("[ERROR] compare_summary:", repr(e))
+                    if improved:
+                        top = max(improved, key=lambda x: float(x.get("delta") or 0))
+                        ad = top.get("yetkinlik") or "bir alanda"
+                        return self._json(200, {
+                            "summary": f"Bu turda en belirgin ilerleme sinyali {ad} alanında görünüyor.",
+                        })
+                    return self._json(200, {"summary": ""})
 
             else:
                 return self._json(400, {"error": "Gecersiz action."})

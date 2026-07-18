@@ -11,6 +11,11 @@ window.CP_PROFIL = {
     overall: "Genel ilerleme",
     empty: "Henüz önerilen eğitim yok. Kariyer Sohbetini tamamla.",
     goalTitle: "Kariyer hedefin",
+    compareSummaryTitle: "Yetkinlik gelişimi",
+    compareSummaryText: (up, down) =>
+      `${up} alanda ilerleme sinyali, ${down} alanda bu turda daha yumuşak bir sinyal. Yaklaşık bir karşılaştırma.`,
+    compareSummaryNone: "Henüz karşılaştırma yok. Kariyer Sohbetini ikinci kez tamamlayınca burada özet görünür.",
+    compareSummaryFirst: "İlk ölçüm kaydedildi. İkinci sohbette karşılaştırma açılır.",
     roadmapTitle: "Yol haritan",
     stepProgress: "Adım",
     stepStatus: {
@@ -56,6 +61,11 @@ window.CP_PROFIL = {
     overall: "Overall progress",
     empty: "No recommended trainings yet. Complete Career Chat.",
     goalTitle: "Your career goal",
+    compareSummaryTitle: "Competency progress",
+    compareSummaryText: (up, down) =>
+      `Progress signal in ${up} area(s); a softer signal in ${down}. Approximate comparison only.`,
+    compareSummaryNone: "No comparison yet. Complete Career Chat a second time to see a summary here.",
+    compareSummaryFirst: "First measurement saved. Comparison unlocks on the second chat.",
     roadmapTitle: "Your roadmap",
     stepProgress: "Step",
     stepStatus: {

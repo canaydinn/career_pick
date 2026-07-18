@@ -566,6 +566,229 @@
     return Math.round((done / trainings.length) * 100);
   }
 
+  /** Yetkinlik adi: trim + kucuk harf (TR) — eslestirme anahtari */
+  function normalizeYetkinlikAdi(name) {
+    return String(name || "")
+      .trim()
+      .toLocaleLowerCase("tr-TR")
+      .replace(/\s+/g, " ");
+  }
+
+  /**
+   * Sohbet sonu yetkinlik snapshot'i.
+   * skills: [{ yetkinlik, puan, seviye, yorum }]
+   * Onceki snapshotlar silinmez.
+   */
+  async function saveCompetencySnapshot(skills, sessionId) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !Array.isArray(skills) || !skills.length) {
+      return { ok: false, reason: "auth_or_empty" };
+    }
+
+    const rows = [];
+    const seen = new Set();
+    for (const sk of skills) {
+      const key = normalizeYetkinlikAdi(sk.yetkinlik || sk.yetkinlik_adi || "");
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      let puan = Number(sk.puan);
+      if (!Number.isFinite(puan)) puan = 3;
+      puan = Math.max(1, Math.min(5, Math.round(puan * 10) / 10));
+      rows.push({
+        yetkinlik_adi: key,
+        puan,
+        seviye: sk.seviye || null,
+        yorum: (sk.yorum || "").trim().slice(0, 400) || null,
+      });
+    }
+    if (!rows.length) return { ok: false, reason: "empty" };
+
+    const { data: snap, error: sErr } = await c
+      .from("competency_snapshots")
+      .insert({
+        user_id: user.id,
+        session_id: sessionId || getSessionId() || null,
+      })
+      .select()
+      .maybeSingle();
+    if (sErr || !snap) {
+      console.warn("[CPAuth] saveCompetencySnapshot:", sErr && sErr.message);
+      return { ok: false, reason: sErr ? sErr.message : "insert" };
+    }
+
+    const scoreRows = rows.map((r) => ({ ...r, snapshot_id: snap.id }));
+    const { error: cErr } = await c.from("competency_scores").insert(scoreRows);
+    if (cErr) {
+      console.warn("[CPAuth] saveCompetencySnapshot scores:", cErr.message);
+      return { ok: false, reason: cErr.message, snapshot: snap };
+    }
+    return { ok: true, snapshot: snap };
+  }
+
+  async function fetchLastSnapshots(limit) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return [];
+    const n = Math.max(1, Math.min(10, limit || 2));
+    const { data, error } = await c
+      .from("competency_snapshots")
+      .select("id, session_id, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(n);
+    if (error) {
+      console.warn("[CPAuth] fetchLastSnapshots:", error.message);
+      return [];
+    }
+    return data || [];
+  }
+
+  async function fetchScoresForSnapshot(snapshotId) {
+    const c = await getClient();
+    if (!c || !snapshotId) return [];
+    const { data, error } = await c
+      .from("competency_scores")
+      .select("*")
+      .eq("snapshot_id", snapshotId);
+    if (error) {
+      console.warn("[CPAuth] fetchScoresForSnapshot:", error.message);
+      return [];
+    }
+    return data || [];
+  }
+
+  /**
+   * Son iki snapshot'i karsilastir.
+   * Donus: { isFirst, improved, declined, unchanged, unmatched, rows, summaryLine? }
+   */
+  async function compareLastCompetencySnapshots() {
+    const snaps = await fetchLastSnapshots(2);
+    if (!snaps.length) {
+      return {
+        empty: true,
+        isFirst: false,
+        hasComparison: false,
+        improved: 0,
+        declined: 0,
+        unchanged: 0,
+        unmatched: 0,
+        rows: [],
+      };
+    }
+    if (snaps.length < 2) {
+      return {
+        empty: false,
+        isFirst: true,
+        hasComparison: false,
+        improved: 0,
+        declined: 0,
+        unchanged: 0,
+        unmatched: 0,
+        rows: [],
+        currentSnapshot: snaps[0],
+      };
+    }
+
+    const currentSnap = snaps[0];
+    const previousSnap = snaps[1];
+    const [currScores, prevScores] = await Promise.all([
+      fetchScoresForSnapshot(currentSnap.id),
+      fetchScoresForSnapshot(previousSnap.id),
+    ]);
+
+    const prevMap = {};
+    prevScores.forEach((s) => {
+      prevMap[normalizeYetkinlikAdi(s.yetkinlik_adi)] = s;
+    });
+    const currMap = {};
+    currScores.forEach((s) => {
+      currMap[normalizeYetkinlikAdi(s.yetkinlik_adi)] = s;
+    });
+
+    const rows = [];
+    let improved = 0;
+    let declined = 0;
+    let unchanged = 0;
+    let unmatched = 0;
+
+    Object.keys(currMap).forEach((key) => {
+      const curr = currMap[key];
+      const prev = prevMap[key];
+      const label = curr.yetkinlik_adi;
+      if (!prev) {
+        unmatched++;
+        rows.push({
+          yetkinlik: label,
+          status: "new",
+          previous: null,
+          current: Number(curr.puan),
+          delta: null,
+          seviye: curr.seviye,
+        });
+        return;
+      }
+      const prevP = Number(prev.puan);
+      const currP = Number(curr.puan);
+      const delta = Math.round((currP - prevP) * 10) / 10;
+      let status = "unchanged";
+      if (delta > 0) {
+        status = "improved";
+        improved++;
+      } else if (delta < 0) {
+        status = "declined";
+        declined++;
+      } else {
+        unchanged++;
+      }
+      rows.push({
+        yetkinlik: label,
+        status,
+        previous: prevP,
+        current: currP,
+        delta,
+        seviye: curr.seviye,
+      });
+      delete prevMap[key];
+    });
+
+    // Onceki oturumda olup simdi olmayanlar
+    Object.keys(prevMap).forEach((key) => {
+      unmatched++;
+      rows.push({
+        yetkinlik: prevMap[key].yetkinlik_adi,
+        status: "unmatched",
+        previous: Number(prevMap[key].puan),
+        current: null,
+        delta: null,
+        seviye: prevMap[key].seviye,
+      });
+    });
+
+    rows.sort((a, b) => {
+      const order = { improved: 0, declined: 1, unchanged: 2, new: 3, unmatched: 4 };
+      return (order[a.status] || 9) - (order[b.status] || 9);
+    });
+
+    return {
+      empty: false,
+      isFirst: false,
+      hasComparison: true,
+      improved,
+      declined,
+      unchanged,
+      unmatched,
+      rows,
+      currentSnapshot: currentSnap,
+      previousSnapshot: previousSnap,
+    };
+  }
+
+  /** Profil ozeti: son iki snapshot karsilastirmasi */
+  async function fetchCompetencyComparisonSummary() {
+    return compareLastCompetencySnapshots();
+  }
+
   /** Uygulama ici "Bu hafta yapman gerekenler" listesi (+ aktif adim) */
   function getWeekActions(trainings, roadmapSteps) {
     const list = Array.isArray(trainings) ? trainings : [];
@@ -651,5 +874,10 @@
     statusProgress,
     overallProgress,
     getWeekActions,
+    normalizeYetkinlikAdi,
+    saveCompetencySnapshot,
+    fetchLastSnapshots,
+    compareLastCompetencySnapshots,
+    fetchCompetencyComparisonSummary,
   };
 })(typeof window !== "undefined" ? window : globalThis);

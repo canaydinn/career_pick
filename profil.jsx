@@ -67,17 +67,20 @@ function ProfilPage() {
   const [trainings, setTrainings] = useState([]);
   const [roadmap, setRoadmap] = useState([]);
   const [goal, setGoal] = useState("");
+  const [skillSummary, setSkillSummary] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function loadPlan() {
-    const [t, steps, g] = await Promise.all([
+    const [t, steps, g, cmp] = await Promise.all([
       CPAuth.fetchTrainings(),
       CPAuth.fetchActiveRoadmap(),
       CPAuth.fetchCareerGoal(),
+      CPAuth.fetchCompetencyComparisonSummary(),
     ]);
     setTrainings(t);
     setRoadmap(steps);
     setGoal(g || "");
+    setSkillSummary(cmp || null);
   }
 
   useEffect(() => {
@@ -98,6 +101,7 @@ function ProfilPage() {
         setTrainings([]);
         setRoadmap([]);
         setGoal("");
+        setSkillSummary(null);
       }
     }
 
@@ -247,6 +251,25 @@ function ProfilPage() {
                 <p>{goal}</p>
               </section>
             ) : null}
+
+            <section className="pf-compare-summary">
+              <h3>{S.compareSummaryTitle}</h3>
+              {!skillSummary || skillSummary.empty || (!skillSummary.hasComparison && !skillSummary.isFirst) ? (
+                <p className="pf-muted">{S.compareSummaryNone}</p>
+              ) : skillSummary.isFirst ? (
+                <p className="pf-muted">{S.compareSummaryFirst}</p>
+              ) : (
+                <p>
+                  <span className="up">{skillSummary.improved}</span>
+                  {" · "}
+                  <span className="down">{skillSummary.declined}</span>
+                  {" — "}
+                  {typeof S.compareSummaryText === "function"
+                    ? S.compareSummaryText(skillSummary.improved, skillSummary.declined)
+                    : ""}
+                </p>
+              )}
+            </section>
 
             {roadmap.length > 0 ? (
               <section className="pf-roadmap" aria-label={S.roadmapTitle}>

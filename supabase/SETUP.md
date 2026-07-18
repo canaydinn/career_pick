@@ -63,6 +63,18 @@ Bu dosya ekler:
 
 Sohbet bitince Claude (veya fallback) 3–5 adım üretir; profilde dikey zaman çizelgesi olarak görünür.
 
+## 6c. Yetkinlik snapshot migration (v0.4+)
+
+SQL Editor’da çalıştır:
+
+`migrations/20260718240000_competency_snapshots.sql`
+
+Bu dosya ekler:
+- `competency_snapshots` (user_id, session_id, created_at)
+- `competency_scores` (snapshot_id, yetkinlik_adi normalize, puan, seviye, yorum)
+
+İkinci sohbette sonuç ekranında “önceki vs şimdi” paneli; profilde kısa özet. `user_insights` değişmez.
+
 ## 7. Haftalık e-posta hatırlatması (opsiyonel)
 
 Vercel env:
