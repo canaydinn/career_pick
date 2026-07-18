@@ -84,6 +84,17 @@ SQL Editor’da çalıştır:
 Profilde “Bu haftanın pratikleri”; sohbet bitince / Pazartesi cron ile 2–4 kısa pratik.
 Önceki haftalar silinmez (`week_start` ile arşiv).
 
+## 6e. İlan uyumu migration (v0.6+)
+
+SQL Editor’da çalıştır:
+
+`migrations/20260719010000_job_matches.sql`
+
+- `job_matches` (url, title, fit_score, gaps_json)
+- `recommended_trainings.source` (`sohbet` | `job_match`)
+
+Sayfa: `/ilan-uyumu.html` — URL veya metin yapıştır → yaklaşık uyum + eğitimler.
+
 ## 7. Haftalık e-posta hatırlatması (opsiyonel)
 
 Vercel env:

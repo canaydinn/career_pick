@@ -1,6 +1,6 @@
 """
 CareerPick — Lokal onizleme sunucusu
-Statik dosyalar + /api/sohbet + /api/public-config
+Statik dosyalar + /api/sohbet + /api/job-match + /api/public-config
 """
 
 import os
@@ -37,6 +37,7 @@ def _load(modname, filename):
 
 
 sohbet = _load("sohbet", "sohbet.py")
+job_match = _load("job_match", "job-match.py")
 
 
 class DevHandler(SimpleHTTPRequestHandler):
@@ -78,13 +79,27 @@ class DevHandler(SimpleHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/api/public-config":
             return self.do_GET()
-        if path != "/api/sohbet":
-            return self._json(404, {"error": "Bulunamadi"})
         try:
             length = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
         except Exception:
             return self._json(400, {"error": "Gecersiz JSON."})
+
+        if path == "/api/job-match":
+            try:
+                print("[REQ] job-match")
+                result = job_match.analyze_job(
+                    data.get("url") or "",
+                    data.get("text") or "",
+                    data.get("profile") if isinstance(data.get("profile"), dict) else {},
+                )
+                return self._json(200 if result.get("ok") else 422, result)
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                return self._json(503, {"ok": False, "error": f"AI hata: {e}", "need_paste": True})
+
+        if path != "/api/sohbet":
+            return self._json(404, {"error": "Bulunamadi"})
 
         action = data.get("action")
         try:
@@ -106,6 +121,23 @@ class DevHandler(SimpleHTTPRequestHandler):
                 print("[REQ] recommend")
                 recs, yetkinlikler = sohbet.oner(data.get("cevaplar", []), a, o, q)
                 return self._json(200, {"recommendations": recs, "yetkinlikler": yetkinlikler})
+            elif action == "roadmap":
+                print("[REQ] roadmap")
+                return self._json(200, sohbet.yol_haritasi_uret(
+                    data.get("hedef") or "",
+                    data.get("yetkinlikler") if isinstance(data.get("yetkinlikler"), list) else [],
+                    data.get("trainings") if isinstance(data.get("trainings"), list) else [],
+                    a,
+                ))
+            elif action == "micro_tasks":
+                print("[REQ] micro_tasks")
+                return self._json(200, sohbet.mikro_gorev_uret(
+                    data.get("yetkinlikler") if isinstance(data.get("yetkinlikler"), list) else [],
+                    a,
+                ))
+            elif action == "compare_summary":
+                print("[REQ] compare_summary")
+                return self._json(200, {"summary": ""})
             return self._json(400, {"error": "Gecersiz action."})
         except Exception as e:
             import traceback; traceback.print_exc()
@@ -115,5 +147,6 @@ class DevHandler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     print(f"Onizleme -> http://localhost:{PORT}/kariyer%20sohbet.html")
     print(f"Profil   -> http://localhost:{PORT}/profil.html")
+    print(f"Ilan     -> http://localhost:{PORT}/ilan-uyumu.html")
     print("Durdurmak icin Ctrl+C")
     ThreadingHTTPServer(("0.0.0.0", PORT), DevHandler).serve_forever()

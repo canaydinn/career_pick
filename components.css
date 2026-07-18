@@ -371,6 +371,49 @@
 .pf-other { margin-top: 8px; }
 .pf-other h3 { font-family: var(--font-display); font-size: 16px; margin: 0 0 12px; color: var(--muted); }
 
+/* ===== Ilan uyumu ===== */
+.ju-disclaimer { font-size: 13px !important; color: var(--faint) !important; margin-top: 8px !important; }
+.ju-form { display: flex; flex-direction: column; gap: 14px; margin-bottom: 22px; }
+.ju-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ju-input, .ju-textarea {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  color: var(--text); padding: 12px 14px; font-size: 14px; font-family: inherit;
+}
+.ju-textarea { resize: vertical; min-height: 140px; line-height: 1.45; }
+.ju-paste-toggle {
+  align-self: flex-start; background: transparent; border: none;
+  color: var(--accent-2); font-size: 13px; font-weight: 700; padding: 0;
+}
+.ju-submit { align-self: flex-start; margin-top: 4px; }
+.ju-error { color: #e8a860; font-size: 14px; margin: 0 0 12px; }
+.ju-saved { color: #6ec4a0; font-size: 13.5px; margin: 0 0 12px; font-weight: 600; }
+.ju-result { display: flex; flex-direction: column; gap: 22px; }
+.ju-score-block { text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px 18px; }
+.ju-score-block h2 { font-family: var(--font-display); font-size: 18px; margin: 0 0 8px; }
+.ju-job-title { margin: 0 0 16px; font-weight: 700; font-size: 15px; }
+.ju-score-ring {
+  --pct: 0;
+  width: 120px; height: 120px; margin: 0 auto 12px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: conic-gradient(var(--accent-2) calc(var(--pct) * 1%), rgba(255,255,255,0.08) 0);
+  position: relative;
+}
+.ju-score-ring::before {
+  content: ""; position: absolute; inset: 10px; border-radius: 50%; background: var(--bg);
+}
+.ju-score-ring strong { position: relative; z-index: 1; font-size: 26px; font-family: var(--font-display); }
+.ju-score-note { max-width: 420px; margin: 0 auto !important; }
+.ju-tags-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 640px) { .ju-tags-row { grid-template-columns: 1fr; } }
+.ju-tags { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
+.ju-tags h3 { font-family: var(--font-display); font-size: 15px; margin: 0 0 10px; }
+.ju-chip-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+.ju-chip { font-size: 12.5px; font-weight: 600; padding: 6px 10px; border-radius: 10px; background: rgba(255,255,255,0.06); color: var(--muted); }
+.ju-chip.strong { color: #6ec4a0; border: 1px solid rgba(90, 180, 140, 0.35); }
+.ju-chip.gap { color: #e8a860; border: 1px solid rgba(232, 168, 96, 0.4); }
+.ju-recs h3 { font-family: var(--font-display); font-size: 17px; margin: 0 0 12px; }
+.ju-gerekce { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+
 @media (max-width: 560px) {
   .pf-timeline-step { grid-template-columns: 32px 1fr; gap: 10px; }
   .pf-timeline-num { width: 30px; height: 30px; font-size: 12px; }

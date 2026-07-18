@@ -19,6 +19,10 @@
     "api/sohbet.py": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "api/job-match.py": {
+      "memory": 1024,
+      "maxDuration": 60
     }
   },
   "crons": [

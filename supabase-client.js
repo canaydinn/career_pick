@@ -228,9 +228,14 @@
     for (const t of trainings) {
       const training_id = String(t.training_id || t.id || t.link || t.ad || "").trim();
       if (!training_id) continue;
-      const training_name = t.training_name || t.ad || t.name || "Egitim";
+      let training_name = t.training_name || t.ad || t.name || "Egitim";
+      if (t.gerekce && String(t.gerekce).trim()) {
+        // Gerekce ayri kolon yok; kisa not olarak isimde degil, kayitta source=job_match
+        training_name = String(training_name).trim();
+      }
       const status = t.status || "eksik";
       const link = (t.link || t.url || "").trim() || null;
+      const source = (t.source === "job_match" ? "job_match" : (t.source || "sohbet"));
       const recommended_at = new Date().toISOString();
 
       const { data: existing } = await c
@@ -241,7 +246,7 @@
         .maybeSingle();
 
       if (existing) {
-        const patch = { training_name, recommended_at };
+        const patch = { training_name, recommended_at, source };
         if (t.status) patch.status = t.status;
         if (link) patch.link = link;
         const { error } = await c
@@ -257,12 +262,122 @@
           training_name,
           status,
           link,
+          source,
           recommended_at,
         });
         if (error) console.warn("[CPAuth] saveRecommendations insert:", error.message);
       }
     }
     return { ok: true };
+  }
+
+  async function buildJobMatchProfile() {
+    const snaps = await fetchLastSnapshots(1);
+    let scores = [];
+    if (snaps[0]) {
+      scores = await fetchScoresForSnapshot(snaps[0].id);
+      scores = scores.map((s) => ({
+        yetkinlik: s.yetkinlik_adi,
+        yetkinlik_adi: s.yetkinlik_adi,
+        puan: s.puan,
+        seviye: s.seviye,
+      }));
+    }
+    const c = await getClient();
+    const user = await getUser();
+    let answers = [];
+    if (c && user) {
+      const { data } = await c
+        .from("user_answers")
+        .select("question_id, answer_text, created_at")
+        .eq("user_id", user.id)
+        .in("question_id", ["kariyer_hedefi", "mevcut_yetenekler", "deneyim_suresi", "hedef_sektor"])
+        .order("created_at", { ascending: false })
+        .limit(20);
+      answers = data || [];
+    }
+    return { scores, answers };
+  }
+
+  async function analyzeJobMatch({ url, text }) {
+    const profile = await buildJobMatchProfile();
+    const r = await fetch("/api/job-match", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: url || "",
+        text: text || "",
+        profile,
+      }),
+    });
+    let data = null;
+    try { data = await r.json(); } catch (e) { data = null; }
+    if (!data) return { ok: false, error: "Yanit okunamadi" };
+    return data;
+  }
+
+  async function saveJobMatch(result) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !result) return { ok: false };
+    const gaps_json = {
+      strong: result.strong || [],
+      gaps: result.gaps || [],
+      items: result.items || [],
+      job: result.job || {},
+      recommendations: (result.recommendations || []).map((x) => ({
+        ad: x.ad,
+        gerekce: x.gerekce,
+        link: x.link,
+      })),
+      disclaimer: result.disclaimer || "",
+    };
+    const { data, error } = await c
+      .from("job_matches")
+      .insert({
+        user_id: user.id,
+        job_url: result.job_url || null,
+        job_title: (result.job && result.job.title) || null,
+        fit_score: Number(result.fit_score) || 0,
+        gaps_json,
+      })
+      .select()
+      .maybeSingle();
+    if (error) {
+      console.warn("[CPAuth] saveJobMatch:", error.message);
+      return { ok: false, reason: error.message };
+    }
+
+    const recs = result.recommendations || [];
+    if (recs.length) {
+      await saveRecommendations(recs.map((r) => ({
+        training_id: r.link || r.ad,
+        training_name: r.ad,
+        link: r.link || "",
+        status: "eksik",
+        source: "job_match",
+        gerekce: r.gerekce || "",
+      })));
+    }
+    return { ok: true, match: data };
+  }
+
+  async function fetchLatestJobMatch() {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return null;
+    const { data, error } = await c
+      .from("job_matches")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.warn("[CPAuth] fetchLatestJobMatch:", error.message);
+      return null;
+    }
+    return data;
   }
 
   async function saveInsights(insights) {
@@ -1035,5 +1150,9 @@
     saveMicroTasks,
     markMicroTaskDone,
     generateAndSaveMicroTasks,
+    buildJobMatchProfile,
+    analyzeJobMatch,
+    saveJobMatch,
+    fetchLatestJobMatch,
   };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -220,6 +220,7 @@ function ProfilPage() {
         <a href="index.html" aria-label={S.brand} style={{ display: "inline-flex" }}><CPLogo /></a>
         <div className="pf-top-actions">
           <a className="pf-link" href="kariyer%20sohbet.html">{S.chatBtn}</a>
+          <a className="pf-link" href="ilan-uyumu.html">{S.jobFitBtn}</a>
           {user ? (
             <button className="pf-btn ghost" onClick={logout}>{S.logoutBtn}</button>
           ) : (
