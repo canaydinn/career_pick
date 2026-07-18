@@ -211,9 +211,32 @@
 .pf-badge.progress { color: #e8a860; }
 .pf-badge.missing { color: var(--faint); }
 .pf-item-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.pf-item-actions button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+.pf-item-actions button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 7px 13px; font-size: 12.5px; font-weight: 600; }
+.pf-item-actions button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .pf-item-actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.pf-item-actions button.primary:hover:not(:disabled) { filter: brightness(1.05); color: var(--accent-ink); }
 .pf-item-actions button:disabled { opacity: .35; cursor: default; }
+.pf-item-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--faint); }
+
+.pf-week { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin-bottom: 18px; }
+.pf-week h3 { font-family: var(--font-display); font-size: 17px; margin: 0 0 12px; }
+.pf-week-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.pf-week-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.pf-week-list li:last-child { border-bottom: none; padding-bottom: 0; }
+.pf-week-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 4px 8px; border-radius: 999px; background: rgba(255,255,255,0.06); color: var(--muted); }
+.pf-week-tag.continue { color: #e8a860; }
+.pf-week-tag.start { color: var(--accent-2); }
+.pf-week-name { flex: 1; min-width: 140px; font-size: 14px; font-weight: 600; }
+.pf-week-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.pf-week-actions button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 11px; font-size: 12px; font-weight: 600; }
+.pf-week-actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.pf-next { margin-top: 14px; font-size: 13.5px; color: var(--muted); }
+
+.pf-reminders { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 20px; margin-bottom: 22px; }
+.pf-reminders h3 { font-family: var(--font-display); font-size: 16px; margin: 0 0 4px; }
+.pf-reminders-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.pf-toggle { flex: 0 0 auto; min-width: 72px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); padding: 8px 14px; font-size: 13px; font-weight: 700; }
+.pf-toggle.on { background: var(--accent-2); color: var(--accent-2-ink); border-color: transparent; }
 
 /* ===== Nav ===== */
 .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; transition: background .3s ease, border-color .3s ease, backdrop-filter .3s; border-bottom: 1px solid transparent; }

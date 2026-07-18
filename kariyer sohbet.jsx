@@ -27,6 +27,7 @@ async function persistResults(recs, skills) {
       await CPAuth.saveRecommendations(recs.map((r) => ({
         training_id: r.link || r.ad,
         training_name: r.ad,
+        link: r.link || "",
         status: "eksik",
       })));
     }
@@ -401,6 +402,7 @@ function KariyerSohbet() {
       CPAuth.saveRecommendations([{
         training_id: id,
         training_name: rec.ad,
+        link: rec.link || "",
         status: "devam_ediyor",
       }]);
     }

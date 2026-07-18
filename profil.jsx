@@ -7,6 +7,19 @@ function statusClass(status) {
   return "missing";
 }
 
+function formatDate(iso, lang) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString(lang === "en" ? "en-GB" : "tr-TR", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch (e) {
+    return "";
+  }
+}
+
 function ProfilPage() {
   const lang = (typeof localStorage !== "undefined" && localStorage.getItem("cp_lang")) === "en" ? "en" : "tr";
   const S = CP_PROFIL[lang];
@@ -41,13 +54,10 @@ function ProfilPage() {
       await CPAuth.init();
       if (!alive) return;
       setConfigured(CPAuth.isConfigured());
-
-      // Sayfa yenile / index'ten donuste oturumu once dogrudan oku
       const existing = await CPAuth.getUser();
       if (!alive) return;
       await applyUser(existing);
       setReady(true);
-
       off = CPAuth.onAuthStateChange((u) => { applyUser(u); });
     })();
 
@@ -70,15 +80,58 @@ function ProfilPage() {
     await CPAuth.signOut();
   }
 
-  async function setStatus(id, status) {
-    setBusy(true);
-    await CPAuth.updateTrainingStatus(id, status);
+  async function refreshTrainings() {
     setTrainings(await CPAuth.fetchTrainings());
+  }
+
+  async function onStart(id) {
+    setBusy(true);
+    await CPAuth.markTrainingStarted(id);
+    await refreshTrainings();
     setBusy(false);
   }
 
+  async function onComplete(id) {
+    setBusy(true);
+    await CPAuth.markTrainingCompleted(id);
+    await refreshTrainings();
+    setBusy(false);
+  }
+
+  async function toggleReminders() {
+    if (!profile) return;
+    setBusy(true);
+    const next = !profile.email_reminders_opt_in;
+    const res = await CPAuth.setEmailRemindersOptIn(next);
+    if (res.ok && res.profile) setProfile(res.profile);
+    else {
+      const p = await CPAuth.fetchProfile();
+      if (p) setProfile(p);
+    }
+    setBusy(false);
+  }
+
+  function resolveLink(t) {
+    const direct = (t.link || "").trim();
+    if (direct) return direct;
+    const id = (t.training_id || "").trim();
+    if (/^https?:\/\//i.test(id)) return id;
+    return "";
+  }
+
+  function openLink(t) {
+    const href = resolveLink(t);
+    if (!href) {
+      alert(S.noLink);
+      return;
+    }
+    window.open(href, "_blank", "noopener,noreferrer");
+  }
+
   const overall = CPAuth.overallProgress(trainings);
+  const week = CPAuth.getWeekActions(trainings);
   const name = (profile && profile.display_name) || (user && user.email) || "";
+  const remindersOn = !!(profile && profile.email_reminders_opt_in);
 
   return (
     <div className="pf-page">
@@ -123,6 +176,57 @@ function ProfilPage() {
               </div>
             </section>
 
+            <section className="pf-week">
+              <h3>{S.weekTitle}</h3>
+              {week.actions.length === 0 ? (
+                <p className="pf-muted">{S.weekEmpty}</p>
+              ) : (
+                <ul className="pf-week-list">
+                  {week.actions.map((a) => (
+                    <li key={a.id + a.type}>
+                      <span className={"pf-week-tag " + a.type}>
+                        {a.type === "continue" ? S.weekContinue : S.weekStart}
+                      </span>
+                      <span className="pf-week-name">{a.training.training_name}</span>
+                      <div className="pf-week-actions">
+                        {resolveLink(a.training) ? (
+                          <button type="button" onClick={() => openLink(a.training)} disabled={busy}>{S.openTraining}</button>
+                        ) : null}
+                        {a.type === "start" ? (
+                          <button type="button" onClick={() => onStart(a.id)} disabled={busy}>{S.markStarted}</button>
+                        ) : (
+                          <button type="button" onClick={() => onComplete(a.id)} disabled={busy}>{S.markCompleted}</button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {week.next ? (
+                <div className="pf-next">
+                  <strong>{S.nextTitle}:</strong> {week.next.training_name}
+                </div>
+              ) : null}
+            </section>
+
+            <section className="pf-reminders">
+              <div className="pf-reminders-row">
+                <div>
+                  <h3>{S.remindersTitle}</h3>
+                  <p className="pf-muted">{S.remindersHint}</p>
+                </div>
+                <button
+                  type="button"
+                  className={"pf-toggle " + (remindersOn ? "on" : "")}
+                  onClick={toggleReminders}
+                  disabled={busy}
+                  aria-pressed={remindersOn}
+                >
+                  {remindersOn ? S.remindersOn : S.remindersOff}
+                </button>
+              </div>
+            </section>
+
             {trainings.length === 0 ? (
               <p className="pf-muted">{S.empty}</p>
             ) : (
@@ -138,10 +242,20 @@ function ProfilPage() {
                         </span>
                       </div>
                       <div className="pf-bar"><div className="pf-bar-fill" style={{ width: pct + "%" }} /></div>
+                      <div className="pf-item-meta">
+                        {t.started_at ? <span>{S.startedAt}: {formatDate(t.started_at, lang)}</span> : null}
+                        {t.completed_at ? <span>{S.completedAt}: {formatDate(t.completed_at, lang)}</span> : null}
+                      </div>
                       <div className="pf-item-actions">
-                        <button disabled={busy || t.status === "eksik"} onClick={() => setStatus(t.id, "eksik")}>{S.markMissing}</button>
-                        <button disabled={busy || t.status === "devam_ediyor"} onClick={() => setStatus(t.id, "devam_ediyor")}>{S.markProgress}</button>
-                        <button disabled={busy || t.status === "tamamlandi"} onClick={() => setStatus(t.id, "tamamlandi")}>{S.markDone}</button>
+                        <button type="button" className="primary" disabled={busy || !resolveLink(t)} onClick={() => openLink(t)}>
+                          {S.openTraining}
+                        </button>
+                        <button type="button" disabled={busy || t.status === "devam_ediyor"} onClick={() => onStart(t.id)}>
+                          {S.markStarted}
+                        </button>
+                        <button type="button" disabled={busy || t.status === "tamamlandi"} onClick={() => onComplete(t.id)}>
+                          {S.markCompleted}
+                        </button>
                       </div>
                     </li>
                   );

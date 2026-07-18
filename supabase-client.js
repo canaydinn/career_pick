@@ -112,16 +112,37 @@
       user.user_metadata?.full_name ||
       user.user_metadata?.name ||
       (user.email ? user.email.split("@")[0] : "");
+    // Opt-in alanini ezme: sadece kimlik alanlarini guncelle
+    const { data: existing } = await c
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (existing) {
+      const { data, error } = await c
+        .from("profiles")
+        .update({ email: user.email || existing.email, display_name: existing.display_name || display })
+        .eq("id", user.id)
+        .select()
+        .maybeSingle();
+      if (error) {
+        console.warn("[CPAuth] ensureProfile update:", error.message);
+        return existing;
+      }
+      return data || existing;
+    }
     const { data, error } = await c
       .from("profiles")
-      .upsert(
-        { id: user.id, email: user.email || null, display_name: display },
-        { onConflict: "id" }
-      )
+      .insert({
+        id: user.id,
+        email: user.email || null,
+        display_name: display,
+        email_reminders_opt_in: false,
+      })
       .select()
       .maybeSingle();
     if (error) {
-      console.warn("[CPAuth] ensureProfile:", error.message);
+      console.warn("[CPAuth] ensureProfile insert:", error.message);
       return null;
     }
     return data;
@@ -209,20 +230,20 @@
       if (!training_id) continue;
       const training_name = t.training_name || t.ad || t.name || "Egitim";
       const status = t.status || "eksik";
+      const link = (t.link || t.url || "").trim() || null;
       const recommended_at = new Date().toISOString();
 
       const { data: existing } = await c
         .from("recommended_trainings")
-        .select("id, status")
+        .select("id, status, link")
         .eq("user_id", user.id)
         .eq("training_id", training_id)
         .maybeSingle();
 
       if (existing) {
-        // Mevcut ilerlemeyi (tamamlandi vb.) koru; sadece isim/tarih guncelle
-        // Acik status gonderildiyse (orn. devam_ediyor) onu uygula
         const patch = { training_name, recommended_at };
         if (t.status) patch.status = t.status;
+        if (link) patch.link = link;
         const { error } = await c
           .from("recommended_trainings")
           .update(patch)
@@ -235,6 +256,7 @@
           training_id,
           training_name,
           status,
+          link,
           recommended_at,
         });
         if (error) console.warn("[CPAuth] saveRecommendations insert:", error.message);
@@ -283,9 +305,33 @@
     const c = await getClient();
     const user = await getUser();
     if (!c || !user) return { ok: false };
+    const now = new Date().toISOString();
+    const patch = { status };
+    if (status === "devam_ediyor") {
+      const { data: row } = await c
+        .from("recommended_trainings")
+        .select("started_at")
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!row || !row.started_at) patch.started_at = now;
+      patch.completed_at = null;
+    } else if (status === "tamamlandi") {
+      const { data: row } = await c
+        .from("recommended_trainings")
+        .select("started_at")
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!row || !row.started_at) patch.started_at = now;
+      patch.completed_at = now;
+    } else if (status === "eksik") {
+      patch.started_at = null;
+      patch.completed_at = null;
+    }
     const { error } = await c
       .from("recommended_trainings")
-      .update({ status })
+      .update(patch)
       .eq("id", id)
       .eq("user_id", user.id);
     if (error) {
@@ -293,6 +339,14 @@
       return { ok: false };
     }
     return { ok: true };
+  }
+
+  async function markTrainingStarted(id) {
+    return updateTrainingStatus(id, "devam_ediyor");
+  }
+
+  async function markTrainingCompleted(id) {
+    return updateTrainingStatus(id, "tamamlandi");
   }
 
   async function fetchProfile() {
@@ -303,6 +357,23 @@
     return data;
   }
 
+  async function setEmailRemindersOptIn(enabled) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return { ok: false };
+    const { data, error } = await c
+      .from("profiles")
+      .update({ email_reminders_opt_in: !!enabled })
+      .eq("id", user.id)
+      .select()
+      .maybeSingle();
+    if (error) {
+      console.warn("[CPAuth] setEmailRemindersOptIn:", error.message);
+      return { ok: false };
+    }
+    return { ok: true, profile: data };
+  }
+
   function statusProgress(status) {
     if (status === "tamamlandi") return 100;
     if (status === "devam_ediyor") return 50;
@@ -310,11 +381,45 @@
   }
 
   function overallProgress(trainings) {
-    // Genel ilerleme = tamamlanan egitim / toplam (2/6 → %33)
-    // "devam_ediyor" kart progress'inde kalir; genel orani sismemesin
     if (!trainings || !trainings.length) return 0;
     const done = trainings.filter((t) => t.status === "tamamlandi").length;
     return Math.round((done / trainings.length) * 100);
+  }
+
+  /** Uygulama ici "Bu hafta yapman gerekenler" listesi */
+  function getWeekActions(trainings) {
+    const list = Array.isArray(trainings) ? trainings : [];
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const actions = [];
+
+    list.forEach((t) => {
+      if (t.status === "devam_ediyor") {
+        const started = t.started_at ? new Date(t.started_at).getTime() : 0;
+        const stale = !started || now - started >= 7 * day;
+        actions.push({
+          id: t.id,
+          type: "continue",
+          training: t,
+          priority: stale ? 1 : 2,
+        });
+      } else if (t.status === "eksik") {
+        const rec = t.recommended_at ? new Date(t.recommended_at).getTime() : 0;
+        const waiting = !rec || now - rec >= 3 * day;
+        if (waiting) {
+          actions.push({
+            id: t.id,
+            type: "start",
+            training: t,
+            priority: 3,
+          });
+        }
+      }
+    });
+
+    actions.sort((a, b) => a.priority - b.priority);
+    const next = list.find((t) => t.status !== "tamamlandi") || null;
+    return { actions: actions.slice(0, 5), next };
   }
 
   global.CPAuth = {
@@ -334,8 +439,12 @@
     saveInsights,
     fetchTrainings,
     updateTrainingStatus,
+    markTrainingStarted,
+    markTrainingCompleted,
     fetchProfile,
+    setEmailRemindersOptIn,
     statusProgress,
     overallProgress,
+    getWeekActions,
   };
 })(typeof window !== "undefined" ? window : globalThis);

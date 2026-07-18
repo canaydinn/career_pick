@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "openai": "^4.28.0",
-    "@qdrant/js-client-rest": "^1.8.0"
+    "@qdrant/js-client-rest": "^1.8.0",
+    "@supabase/supabase-js": "^2.49.1"
   }
 }

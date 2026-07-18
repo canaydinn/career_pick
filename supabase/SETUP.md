@@ -40,3 +40,28 @@ Lokal için `.env.local` içine aynı anahtarları yaz; `scripts/dev_server.py` 
 1. `kariyer sohbet.html` → **Gmail ile giriş**
 2. Sohbeti bitir → Supabase Table Editor’da `user_answers`, `recommended_trainings`, `user_insights` satırları
 3. `profil.html` → eğitimler ve progress bar
+
+## 6. Öğrenme planı migration (v0.2+)
+
+SQL Editor’da ayrıca çalıştır:
+
+`migrations/20260718220000_learning_plan.sql`
+
+Bu dosya ekler:
+- `recommended_trainings.link`, `started_at`, `completed_at`, `last_reminded_at`
+- `profiles.email_reminders_opt_in` (varsayılan `false`)
+
+## 7. Haftalık e-posta hatırlatması (opsiyonel)
+
+Vercel env:
+
+```
+CRON_SECRET=uzun-rastgele-string
+SUPABASE_SERVICE_ROLE_KEY=eyJ...   # service_role — asla frontend’e koyma
+RESEND_API_KEY=re_...
+RESEND_FROM=Career Pick <onboarding@resend.dev>
+APP_BASE_URL=https://careerpick.vercel.app
+```
+
+Cron: her Pazartesi 09:00 UTC → `GET/POST /api/reminders`  
+Kullanıcı profilde **Haftalık e-posta hatırlatması**nı açmadan mail gitmez.
