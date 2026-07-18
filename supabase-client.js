@@ -789,6 +789,156 @@
     return compareLastCompetencySnapshots();
   }
 
+  /** Bu haftanin Pazartesi tarihi (YYYY-MM-DD, yerel) */
+  function currentWeekStart() {
+    const d = new Date();
+    const day = d.getDay(); // 0=Pazar
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() + diff);
+    const y = monday.getFullYear();
+    const m = String(monday.getMonth() + 1).padStart(2, "0");
+    const dd = String(monday.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + dd;
+  }
+
+  async function fetchWeekMicroTasks(weekStart) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return [];
+    const ws = weekStart || currentWeekStart();
+    const { data, error } = await c
+      .from("micro_tasks")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("week_start", ws)
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.warn("[CPAuth] fetchWeekMicroTasks:", error.message);
+      return [];
+    }
+    return data || [];
+  }
+
+  async function hasWeekMicroTasks(weekStart) {
+    const list = await fetchWeekMicroTasks(weekStart);
+    return list.length > 0;
+  }
+
+  /**
+   * tasks: [{ yetkinlik_adi, title, description, minutes, due_hint }]
+   * Ayni hafta icin zaten paket varsa yazmaz (yenileme cron/sohbet cakismasin).
+   */
+  async function saveMicroTasks(tasks, { snapshotId, source, weekStart, force } = {}) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !Array.isArray(tasks) || !tasks.length) {
+      return { ok: false, reason: "auth_or_empty" };
+    }
+    const ws = weekStart || currentWeekStart();
+    if (!force) {
+      const existing = await hasWeekMicroTasks(ws);
+      if (existing) return { ok: true, skipped: true, week_start: ws };
+    }
+
+    const src = source === "claude" ? "claude" : "template";
+    const rows = tasks.slice(0, 4).map((t) => {
+      const key = normalizeYetkinlikAdi(t.yetkinlik_adi || t.yetkinlik || t.yetkinlik_label || "genel");
+      let desc = (t.description || "").trim();
+      if (t.minutes) desc = (desc ? desc + " " : "") + "(" + t.minutes + " dk)";
+      return {
+        user_id: user.id,
+        yetkinlik_adi: key || "genel",
+        title: String(t.title || "Pratik").trim().slice(0, 160),
+        description: desc.slice(0, 500) || null,
+        week_start: ws,
+        due_hint: (t.due_hint || "").trim().slice(0, 40) || null,
+        status: "bekliyor",
+        source: src,
+        competency_snapshot_id: snapshotId || null,
+      };
+    }).filter((r) => r.title);
+
+    if (!rows.length) return { ok: false, reason: "empty" };
+    const { data, error } = await c.from("micro_tasks").insert(rows).select();
+    if (error) {
+      console.warn("[CPAuth] saveMicroTasks:", error.message);
+      return { ok: false, reason: error.message };
+    }
+    return { ok: true, tasks: data || [], week_start: ws };
+  }
+
+  async function markMicroTaskDone(id) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !id) return { ok: false };
+    const { error } = await c
+      .from("micro_tasks")
+      .update({ status: "yapildi" })
+      .eq("id", id)
+      .eq("user_id", user.id);
+    if (error) {
+      console.warn("[CPAuth] markMicroTaskDone:", error.message);
+      return { ok: false };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Zayif yetkinliklerden API ile gorev uretip bu haftaya kaydeder.
+   * skills: sohbet yetkinlik listesi; yoksa son snapshot skorlari kullanilir.
+   */
+  async function generateAndSaveMicroTasks(skills, snapshotId) {
+    let yetkinlikler = Array.isArray(skills) ? skills : [];
+    let snapId = snapshotId || null;
+
+    if (!yetkinlikler.length) {
+      const snaps = await fetchLastSnapshots(1);
+      if (!snaps.length) return { ok: false, reason: "no_snapshot" };
+      snapId = snaps[0].id;
+      const scores = await fetchScoresForSnapshot(snapId);
+      yetkinlikler = scores.map((s) => ({
+        yetkinlik: s.yetkinlik_adi,
+        puan: s.puan,
+        seviye: s.seviye || (Number(s.puan) < 3 ? "gelistirilmeli" : "guclu"),
+      }));
+    }
+
+    const weak = yetkinlikler.filter((y) => {
+      const sev = y.seviye || "";
+      const p = Number(y.puan);
+      return sev === "gelistirilmeli" || (Number.isFinite(p) && p < 3);
+    });
+    if (!weak.length && !yetkinlikler.length) {
+      return { ok: false, reason: "no_weak" };
+    }
+
+    try {
+      const r = await fetch("/api/sohbet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "micro_tasks",
+          yetkinlikler: weak.length ? weak : yetkinlikler,
+        }),
+      });
+      if (!r.ok) throw new Error("micro_tasks_http");
+      const data = await r.json();
+      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+      if (!tasks.length) return { ok: false, reason: "empty_tasks" };
+      if (!snapId) {
+        const snaps = await fetchLastSnapshots(1);
+        if (snaps[0]) snapId = snaps[0].id;
+      }
+      return saveMicroTasks(tasks, {
+        snapshotId: snapId,
+        source: data.source === "claude" ? "claude" : "template",
+      });
+    } catch (e) {
+      console.warn("[CPAuth] generateAndSaveMicroTasks:", e.message || e);
+      return { ok: false, reason: e.message || "error" };
+    }
+  }
+
   /** Uygulama ici "Bu hafta yapman gerekenler" listesi (+ aktif adim) */
   function getWeekActions(trainings, roadmapSteps) {
     const list = Array.isArray(trainings) ? trainings : [];
@@ -879,5 +1029,11 @@
     fetchLastSnapshots,
     compareLastCompetencySnapshots,
     fetchCompetencyComparisonSummary,
+    currentWeekStart,
+    fetchWeekMicroTasks,
+    hasWeekMicroTasks,
+    saveMicroTasks,
+    markMicroTaskDone,
+    generateAndSaveMicroTasks,
   };
 })(typeof window !== "undefined" ? window : globalThis);

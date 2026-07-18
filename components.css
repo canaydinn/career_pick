@@ -235,6 +235,57 @@
 .pf-item-actions button:disabled { opacity: .35; cursor: default; }
 .pf-item-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--faint); }
 
+.pf-micro {
+  background: linear-gradient(145deg, rgba(232, 168, 96, 0.08), rgba(255,255,255,0.02));
+  border: 1px dashed rgba(232, 168, 96, 0.45);
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+.pf-micro h3 { font-family: var(--font-display); font-size: 17px; margin: 0 0 6px; }
+.pf-micro-hint { margin: 0 0 14px !important; font-size: 13px !important; }
+.pf-micro-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.pf-micro-item {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.pf-micro-item:first-child { border-top: none; padding-top: 0; }
+.pf-micro-item.done { opacity: 0.65; }
+.pf-micro-check {
+  width: 28px; height: 28px; border-radius: 8px;
+  border: 1px solid rgba(232, 168, 96, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800; color: #e8a860;
+  background: rgba(0,0,0,0.15);
+}
+.pf-micro-item.done .pf-micro-check {
+  border-color: rgba(90, 180, 140, 0.55);
+  color: #6ec4a0;
+}
+.pf-micro-title { font-size: 14.5px; font-weight: 700; margin-bottom: 4px; }
+.pf-micro-desc { margin: 0 0 6px; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.pf-micro-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; color: var(--faint); text-transform: lowercase; }
+.pf-micro-btn {
+  background: transparent;
+  border: 1px solid rgba(232, 168, 96, 0.55);
+  color: #e8a860;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pf-micro-btn:hover:not(:disabled) { background: rgba(232, 168, 96, 0.12); color: var(--text); }
+.pf-micro-btn:disabled { opacity: 0.45; cursor: default; }
+@media (max-width: 560px) {
+  .pf-micro-item { grid-template-columns: 28px 1fr; }
+  .pf-micro-btn { grid-column: 2; justify-self: start; }
+}
+
 .pf-week { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin-bottom: 18px; }
 .pf-week h3 { font-family: var(--font-display); font-size: 17px; margin: 0 0 12px; }
 .pf-week-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }

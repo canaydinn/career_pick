@@ -75,6 +75,15 @@ Bu dosya ekler:
 
 İkinci sohbette sonuç ekranında “önceki vs şimdi” paneli; profilde kısa özet. `user_insights` değişmez.
 
+## 6d. Mikro görevler migration (v0.5+)
+
+SQL Editor’da çalıştır:
+
+`migrations/20260718250000_micro_tasks.sql`
+
+Profilde “Bu haftanın pratikleri”; sohbet bitince / Pazartesi cron ile 2–4 kısa pratik.
+Önceki haftalar silinmez (`week_start` ile arşiv).
+
 ## 7. Haftalık e-posta hatırlatması (opsiyonel)
 
 Vercel env:

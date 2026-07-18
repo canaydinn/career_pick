@@ -10,6 +10,7 @@ Islemler (action):
 3) recommend — profil + senaryo puanlariyla egitim onerir
 4) roadmap   — hedef + yetkinlik + egitimlerden 3-5 adimlik yol haritasi
 5) compare_summary — onceki vs simdi yetkinlik farkindan tek cumle (opsiyonel)
+6) micro_tasks — zayif yetkinlikler icin 2-4 haftalik kisa pratik
 
 Ortam: OPENAI_API_KEY, ANTHROPIC_API_KEY, QDRANT_URL, QDRANT_API_KEY,
 (ops.) CLAUDE_MODEL, ALLOWED_ORIGINS
@@ -675,6 +676,246 @@ Kurallar: steps uzunlugu 3-5; title kisa; description 1-2 cumle."""
     }
 
 
+# ── Mikro gorevler (haftalik pratik) ───────────────────────────────────────────
+
+_DUE_HINTS = ("Pazartesi", "Çarşamba", "Cuma", "Pazar")
+
+_MICRO_TEMPLATES = {
+    "iletisim": [
+        {"title": "Bir kişiden kısa geribildirim iste", "description": "Bugün birlikte çalıştığın birine nazikçe sor: bu hafta neyi daha iyi yapabilirdim? Cevabı 3 cümleyle not et.", "minutes": 15},
+        {"title": "Aktif dinleme notu", "description": "Bir konuşmada önce özetleyip sonra kendi fikrini söyle. Özeti bir cümleyle yaz.", "minutes": 10},
+        {"title": "Net bir istek cümlesi yaz", "description": "Belirsiz bir ihtiyacını 'Ne istiyorum / Ne zamana / Kimden' formatında yaz ve gerekiyorsa gönder.", "minutes": 15},
+    ],
+    "önceliklendirme": [
+        {"title": "Acil / önemli matrisi", "description": "Bugünkü 5 işini acil-önemli matrisine yerleştir. En alttaki bir işi bilerek ertele.", "minutes": 15},
+        {"title": "Tek öncelik seç", "description": "Yarın için tek bir 'mutlaka bitecek' iş seç ve nedenini 2 cümle yaz.", "minutes": 10},
+        {"title": "Haftalık hayır listesi", "description": "Bu hafta yapmayacağın 2 şeyi yaz. Suçluluk yerine netlik hedefle.", "minutes": 10},
+    ],
+    "onceliklendirme": [
+        {"title": "Acil / önemli matrisi", "description": "Bugünkü 5 işini acil-önemli matrisine yerleştir. En alttaki bir işi bilerek ertele.", "minutes": 15},
+        {"title": "Tek öncelik seç", "description": "Yarın için tek bir 'mutlaka bitecek' iş seç ve nedenini 2 cümle yaz.", "minutes": 10},
+        {"title": "Haftalık hayır listesi", "description": "Bu hafta yapmayacağın 2 şeyi yaz. Suçluluk yerine netlik hedefle.", "minutes": 10},
+    ],
+    "takım": [
+        {"title": "Takımda bir teşekkür", "description": "Bir ekip arkadaşının somut katkısını fark et ve ona kısa bir teşekkür ilet.", "minutes": 10},
+        {"title": "Rol netliği notu", "description": "Ortak bir işte 'ben / sen / birlikte' sorumluluklarını 3 satırda yaz.", "minutes": 15},
+        {"title": "Kısa check-in sorusu", "description": "Birine 'Bugün sende neye ihtiyaç var?' diye sor; cevabı dinle, çözüm dayatma.", "minutes": 10},
+    ],
+    "problem": [
+        {"title": "Problemi tek cümlede tanımla", "description": "Canını sıkan bir durumu tek cümlede yaz: kim etkileniyor, ne eksik?", "minutes": 10},
+        {"title": "İki seçenek üret", "description": "Aynı probleme en az iki farklı yaklaşım yaz; hangisini denerdin neden?", "minutes": 15},
+        {"title": "Küçük deney", "description": "Çözümün en küçük test edilebilir adımını bugün dene ve sonucu not et.", "minutes": 20},
+    ],
+    "öğrenme": [
+        {"title": "10 dakikalık öğrenme bloğu", "description": "Hedefinle ilgili bir makale veya video izle; 3 madde özet yaz.", "minutes": 15},
+        {"title": "Bir şeyi başkasına anlat", "description": "Öğrendiğin bir konuyu birine (veya kendine sesli) 2 dakikada anlat.", "minutes": 10},
+        {"title": "Hata günlüğü", "description": "Bu hafta bir hatanı yaz: ne oldu, ne öğrendim, sonraki denemede ne değişir?", "minutes": 15},
+    ],
+    "ogrenme": [
+        {"title": "10 dakikalık öğrenme bloğu", "description": "Hedefinle ilgili bir makale veya video izle; 3 madde özet yaz.", "minutes": 15},
+        {"title": "Bir şeyi başkasına anlat", "description": "Öğrendiğin bir konuyu birine (veya kendine sesli) 2 dakikada anlat.", "minutes": 10},
+        {"title": "Hata günlüğü", "description": "Bu hafta bir hatanı yaz: ne oldu, ne öğrendim, sonraki denemede ne değişir?", "minutes": 15},
+    ],
+    "analitik": [
+        {"title": "Veriyi 3 soruya indir", "description": "Bir karar için hangi 3 veri noktası yeterli olurdu? Listele.", "minutes": 15},
+        {"title": "Varsayımı yaz", "description": "Bir fikrinin arkasındaki varsayımı tek cümlede yaz; onu nasıl test edersin?", "minutes": 10},
+        {"title": "Basit karşılaştırma", "description": "İki seçeneği artı/eksi tablosunda karşılaştır; sonucu bir cümleyle özetle.", "minutes": 15},
+    ],
+    "liderlik": [
+        {"title": "Net beklenti cümlesi", "description": "Bir iş için beklediğin sonucu 'ne / ne zaman / nasıl başarılı' diye yaz.", "minutes": 15},
+        {"title": "Delege etmeyi dene", "description": "Kendinin yaptığı küçük bir işi başkasına bırakmayı planla veya sor.", "minutes": 15},
+        {"title": "Karar notu", "description": "Aldığın veya ertelediğin bir kararı yaz: gerekçe + sonraki kontrol tarihi.", "minutes": 10},
+    ],
+}
+
+_GENERAL_MICRO = [
+    {"title": "15 dakikalık odak bloğu", "description": "Telefonsuz 15 dk tek bir işe odaklan. Bitince ne tamamlandığını bir cümle yaz.", "minutes": 15},
+    {"title": "Haftalık mini hedef", "description": "Bu hafta için tek, ölçülebilir küçük bir hedef yaz (kurs değil, pratik bir eylem).", "minutes": 10},
+    {"title": "Günün kısa özeti", "description": "Günün sonunda: ne iyi gitti / ne zorlandı / yarın ilk adım — 3 satır.", "minutes": 10},
+    {"title": "Birini gözlemle ve not al", "description": "İyi yapan birini izle; onun yaptığı 1 somut davranışı not et ve dene.", "minutes": 15},
+]
+
+
+def _normalize_yetkinlik_key(name):
+    s = (name or "").strip().lower()
+    s = re.sub(r"\s+", " ", s)
+    # TR I/İ yaklasimi: basit lower yeterli degilse ek temizle
+    return s
+
+
+def _template_key_for(yetkinlik):
+    key = _normalize_yetkinlik_key(yetkinlik)
+    for k in _MICRO_TEMPLATES:
+        if k in key or key in k:
+            return k
+    # Anahtar kelime eslesmesi
+    mapping = (
+        ("iletisim", "iletisim"),
+        ("iletişim", "iletisim"),
+        ("öncelik", "onceliklendirme"),
+        ("oncelik", "onceliklendirme"),
+        ("takım", "takım"),
+        ("takim", "takım"),
+        ("ekip", "takım"),
+        ("problem", "problem"),
+        ("çözüm", "problem"),
+        ("ogrenme", "ogrenme"),
+        ("öğrenme", "öğrenme"),
+        ("analitik", "analitik"),
+        ("analiz", "analitik"),
+        ("lider", "liderlik"),
+        ("yönet", "liderlik"),
+        ("yonet", "liderlik"),
+    )
+    for needle, bucket in mapping:
+        if needle in key:
+            return bucket
+    return None
+
+
+def _weak_yetkinlikler(yetkinlikler, limit=2):
+    weak = []
+    for y in yetkinlikler or []:
+        if not isinstance(y, dict):
+            continue
+        ad = (y.get("yetkinlik") or y.get("yetkinlik_adi") or "").strip()
+        if not ad:
+            continue
+        seviye = (y.get("seviye") or "").strip()
+        try:
+            puan = float(y.get("puan", 5))
+        except (TypeError, ValueError):
+            puan = 5.0
+        if seviye == "gelistirilmeli" or puan < EKSIK_ESIGI:
+            weak.append({"yetkinlik": ad, "puan": puan, "seviye": seviye or "gelistirilmeli"})
+    weak.sort(key=lambda x: x["puan"])
+    return weak[:limit]
+
+
+def micro_tasks_from_templates(yetkinlikler, max_tasks=4):
+    """Fallback: sablon havuzundan 2-4 gorev."""
+    weak = _weak_yetkinlikler(yetkinlikler, limit=2)
+    if not weak:
+        weak = [{"yetkinlik": "genel iş becerisi", "puan": 3.0, "seviye": "gelistirilmeli"}]
+
+    picked = []
+    for w in weak:
+        bucket = _template_key_for(w["yetkinlik"])
+        pool = list(_MICRO_TEMPLATES.get(bucket, [])) if bucket else []
+        if not pool:
+            pool = list(_GENERAL_MICRO)
+        for t in pool:
+            if len(picked) >= max_tasks:
+                break
+            picked.append({
+                "yetkinlik": w["yetkinlik"],
+                "title": t["title"],
+                "description": t["description"],
+                "minutes": t.get("minutes") or 15,
+            })
+        if len(picked) >= max_tasks:
+            break
+
+    while len(picked) < 2:
+        g = _GENERAL_MICRO[len(picked) % len(_GENERAL_MICRO)]
+        picked.append({
+            "yetkinlik": weak[0]["yetkinlik"],
+            "title": g["title"],
+            "description": g["description"],
+            "minutes": g.get("minutes") or 15,
+        })
+
+    out = []
+    for i, t in enumerate(picked[:max_tasks]):
+        mins = int(t.get("minutes") or 15)
+        mins = max(10, min(30, mins))
+        out.append({
+            "yetkinlik_adi": _normalize_yetkinlik_key(t["yetkinlik"]),
+            "yetkinlik_label": t["yetkinlik"],
+            "title": t["title"][:160],
+            "description": (t.get("description") or "")[:400],
+            "minutes": mins,
+            "due_hint": _DUE_HINTS[i % len(_DUE_HINTS)],
+        })
+    return out
+
+
+def _sanitize_micro_tasks(raw_tasks, weak_labels, max_tasks=4):
+    if not isinstance(raw_tasks, list):
+        return None
+    default_label = weak_labels[0] if weak_labels else "genel iş becerisi"
+    out = []
+    for item in raw_tasks:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()[:160]
+        desc = str(item.get("description") or "").strip()[:400]
+        if not title:
+            continue
+        blob = (title + " " + desc).lower()
+        if re.search(r"maas|maaş|\$\d|garantili is|garantili iş", blob):
+            continue
+        try:
+            mins = int(item.get("minutes") or item.get("dakika") or 15)
+        except (TypeError, ValueError):
+            mins = 15
+        mins = max(10, min(30, mins))
+        label = str(item.get("yetkinlik") or item.get("yetkinlik_label") or default_label).strip()
+        out.append({
+            "yetkinlik_adi": _normalize_yetkinlik_key(label),
+            "yetkinlik_label": label,
+            "title": title,
+            "description": desc,
+            "minutes": mins,
+            "due_hint": _DUE_HINTS[len(out) % len(_DUE_HINTS)],
+        })
+        if len(out) >= max_tasks:
+            break
+    if len(out) < 2:
+        return None
+    return out[:max_tasks]
+
+
+def mikro_gorev_uret(yetkinlikler, a):
+    """
+    Claude'dan 2-4 mikro gorev; basarisizsa sablon.
+    Donus: { tasks, source }
+    """
+    weak = _weak_yetkinlikler(yetkinlikler, limit=2)
+    if not weak:
+        tasks = micro_tasks_from_templates([], max_tasks=3)
+        return {"tasks": tasks, "source": "template"}
+
+    labels = [w["yetkinlik"] for w in weak]
+    paket = json.dumps(weak, ensure_ascii=False)
+    sistem = """Sen CareerPick kariyer kocusun.
+Zayif yetkinlikler icin 1 haftalik KISA pratikler uret (egitim/kurs DEGIL).
+Her gorev 10-30 dakika, is/yasam icinde uygulanabilir.
+Kesin tarih, maas veya is garantisi VERME. Suclayici dil kullanma.
+Toplam 2 ile 4 gorev (en fazla 4).
+Sadece JSON:
+{"tasks":[{"yetkinlik":"...","title":"...","description":"...","minutes":15}]}"""
+
+    try:
+        r = a.messages.create(
+            model=CLAUDE_MODEL, max_tokens=900, system=sistem,
+            messages=[{"role": "user", "content": f"ZAYIF YETKINLIKLER:\n{paket}"}],
+        )
+        txt = r.content[0].text.strip()
+        d = _json_obj_bul(txt)
+        if d:
+            cleaned = _sanitize_micro_tasks(d.get("tasks"), labels, max_tasks=4)
+            if cleaned:
+                return {"tasks": cleaned, "source": "claude"}
+    except Exception as e:
+        print("[ERROR] micro_tasks claude:", repr(e))
+
+    return {
+        "tasks": micro_tasks_from_templates(yetkinlikler, max_tasks=4),
+        "source": "template",
+    }
+
+
 # ── HTTP ───────────────────────────────────────────────────────────────────────
 
 def _allowed_origin(origin):
@@ -838,6 +1079,12 @@ class handler(BaseHTTPRequestHandler):
                             "summary": f"Bu turda en belirgin ilerleme sinyali {ad} alanında görünüyor.",
                         })
                     return self._json(200, {"summary": ""})
+
+            elif action == "micro_tasks":
+                yetkinlikler = data.get("yetkinlikler") if isinstance(data.get("yetkinlikler"), list) else []
+                a, _, _ = _clients()
+                result = mikro_gorev_uret(yetkinlikler, a)
+                return self._json(200, result)
 
             else:
                 return self._json(400, {"error": "Gecersiz action."})

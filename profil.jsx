@@ -68,19 +68,25 @@ function ProfilPage() {
   const [roadmap, setRoadmap] = useState([]);
   const [goal, setGoal] = useState("");
   const [skillSummary, setSkillSummary] = useState(null);
+  const [microTasks, setMicroTasks] = useState([]);
+  const [hasSnapshot, setHasSnapshot] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function loadPlan() {
-    const [t, steps, g, cmp] = await Promise.all([
+    const [t, steps, g, cmp, micros, snaps] = await Promise.all([
       CPAuth.fetchTrainings(),
       CPAuth.fetchActiveRoadmap(),
       CPAuth.fetchCareerGoal(),
       CPAuth.fetchCompetencyComparisonSummary(),
+      CPAuth.fetchWeekMicroTasks(),
+      CPAuth.fetchLastSnapshots(1),
     ]);
     setTrainings(t);
     setRoadmap(steps);
     setGoal(g || "");
     setSkillSummary(cmp || null);
+    setMicroTasks(micros || []);
+    setHasSnapshot(!!(snaps && snaps.length));
   }
 
   useEffect(() => {
@@ -102,6 +108,8 @@ function ProfilPage() {
         setRoadmap([]);
         setGoal("");
         setSkillSummary(null);
+        setMicroTasks([]);
+        setHasSnapshot(false);
       }
     }
 
@@ -145,6 +153,13 @@ function ProfilPage() {
   async function onComplete(id) {
     setBusy(true);
     await CPAuth.markTrainingCompleted(id);
+    await loadPlan();
+    setBusy(false);
+  }
+
+  async function onMicroDone(id) {
+    setBusy(true);
+    await CPAuth.markMicroTaskDone(id);
     await loadPlan();
     setBusy(false);
   }
@@ -312,6 +327,43 @@ function ProfilPage() {
                 </ol>
               </section>
             ) : null}
+
+            <section className="pf-micro">
+              <h3>{S.microTitle}</h3>
+              <p className="pf-muted pf-micro-hint">{S.microHint}</p>
+              {!hasSnapshot ? (
+                <p className="pf-muted">{S.microEmptyChat}</p>
+              ) : microTasks.length === 0 ? (
+                <p className="pf-muted">{S.microEmptyWeek}</p>
+              ) : (
+                <ul className="pf-micro-list">
+                  {microTasks.map((m) => {
+                    const done = m.status === "yapildi";
+                    return (
+                      <li key={m.id} className={"pf-micro-item" + (done ? " done" : "")}>
+                        <div className="pf-micro-check" aria-hidden="true">{done ? "✓" : ""}</div>
+                        <div className="pf-micro-body">
+                          <div className="pf-micro-title">{m.title}</div>
+                          {m.description ? <p className="pf-micro-desc">{m.description}</p> : null}
+                          <div className="pf-micro-meta">
+                            {m.yetkinlik_adi ? <span>{m.yetkinlik_adi}</span> : null}
+                            {m.due_hint ? <span>{S.microDue}: {m.due_hint}</span> : null}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="pf-micro-btn"
+                          disabled={busy || done}
+                          onClick={() => onMicroDone(m.id)}
+                        >
+                          {done ? S.microDoneLabel : S.microDone}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
 
             <section className="pf-week">
               <h3>{S.weekTitle}</h3>

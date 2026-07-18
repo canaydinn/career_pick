@@ -45,7 +45,13 @@ async function persistResults(recs, skills, cevaplar) {
           sk.yorum || "",
         ].filter(Boolean).join(" — "),
       })));
-      await CPAuth.saveCompetencySnapshot(skills, CPAuth.getSessionId());
+      const snapRes = await CPAuth.saveCompetencySnapshot(skills, CPAuth.getSessionId());
+      const snapId = snapRes && snapRes.snapshot ? snapRes.snapshot.id : null;
+      try {
+        await CPAuth.generateAndSaveMicroTasks(skills, snapId);
+      } catch (e) {
+        console.warn("[SOHBET] micro_tasks:", e.message || e);
+      }
     }
     await persistRoadmap(trainingsPayload, skills, cevaplar);
 
