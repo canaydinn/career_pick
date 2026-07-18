@@ -18,6 +18,12 @@ window.CP_SOHBET = {
     error: "Bir sorun oluştu, tekrar dener misin?",
     progress: (a, b) => `Soru ${a} / ${b}`,
     scenarioCount: 5,
+    auth: {
+      login: "Gmail ile giriş",
+      logout: "Çıkış",
+      profile: "Profil",
+      error: "Giriş başlatılamadı. Supabase ayarlarını kontrol et.",
+    },
     questions: [
       { key: "hedef_sektor",      type: "profile",  q: "Hangi sektörde çalışmak istiyorsun?",                          placeholder: "Örn. yazılım, finans, sağlık, inşaat…" },
       { key: "mevcut_yetenekler", type: "profile",  q: "Şu anda hangi beceri ve bilgilere sahipsin?",                  placeholder: "Örn. Excel, Python, iletişim, tasarım…" },
@@ -63,6 +69,12 @@ window.CP_SOHBET = {
     error: "Something went wrong, want to try again?",
     progress: (a, b) => `Question ${a} / ${b}`,
     scenarioCount: 5,
+    auth: {
+      login: "Sign in with Gmail",
+      logout: "Sign out",
+      profile: "Profile",
+      error: "Could not start sign-in. Check Supabase settings.",
+    },
     questions: [
       { key: "hedef_sektor",      type: "profile",  q: "Which sector would you like to work in?",                       placeholder: "e.g. software, finance, healthcare, construction…" },
       { key: "mevcut_yetenekler", type: "profile",  q: "What skills and knowledge do you currently have?",              placeholder: "e.g. Excel, Python, communication, design…" },

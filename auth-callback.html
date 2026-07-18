@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Giriş — Career Pick</title>
+<link rel="stylesheet" href="styles.css" />
+<style>
+  body { min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text); }
+  .box { text-align: center; max-width: 360px; padding: 32px; }
+  .box p { color: var(--muted); line-height: 1.5; }
+  .err { color: #e88; margin-top: 12px; }
+</style>
+</head>
+<body data-theme="electric">
+  <div class="box">
+    <p id="msg">Giriş tamamlanıyor…</p>
+    <p class="err" id="err" hidden></p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-client.js"></script>
+  <script>
+    (async function () {
+      const msg = document.getElementById("msg");
+      const err = document.getElementById("err");
+      try {
+        await CPAuth.init();
+        const session = await CPAuth.getSession();
+        if (!session) {
+          // hash/query ile session gelene kadar kısa bekle
+          await new Promise((r) => setTimeout(r, 800));
+        }
+        const user = await CPAuth.getUser();
+        if (!user) throw new Error("Oturum bulunamadi");
+        await CPAuth.ensureProfile(user);
+        const next = sessionStorage.getItem("cp_auth_next") || "profil.html";
+        sessionStorage.removeItem("cp_auth_next");
+        msg.textContent = "Yonlendiriliyorsun…";
+        location.replace(next);
+      } catch (e) {
+        msg.textContent = "Giris basarisiz";
+        err.hidden = false;
+        err.textContent = (e && e.message) || "Tekrar dene";
+        setTimeout(() => { location.replace("kariyer%20sohbet.html"); }, 2500);
+      }
+    })();
+  </script>
+</body>
+</html>

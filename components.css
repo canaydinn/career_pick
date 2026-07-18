@@ -63,7 +63,15 @@
 
 /* ===== Kariyer Sohbet (ayri sayfa) ===== */
 .cs-page { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
-.cs-top { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; border-bottom: 1px solid var(--line); }
+.cs-top { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; border-bottom: 1px solid var(--line); gap: 16px; }
+.cs-auth { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.cs-auth-link { font-size: 13px; font-weight: 600; color: var(--muted); }
+.cs-auth-link:hover { color: var(--accent-2); }
+.cs-auth-name { font-size: 12.5px; color: var(--faint); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-auth-btn { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 700; }
+.cs-auth-btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.cs-auth-btn:hover:not(:disabled) { filter: brightness(1.05); }
+.cs-auth-btn:disabled { opacity: .45; cursor: default; }
 .cs-shell { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 22px 20px 0; display: flex; flex-direction: column; min-height: 0; }
 .cs-head { display: flex; align-items: center; gap: 14px; padding: 4px 0 16px; }
 .cs-head .cs-title { flex: 1; text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 18px; }
@@ -165,7 +173,42 @@
   .cs-top { padding: 14px 18px; }
   .cs-cards { grid-template-columns: 1fr; }
   .cs-head .cs-title { display: none; }
+  .cs-auth-name { display: none; }
 }
+
+/* ===== Profil sayfasi ===== */
+.pf-page { min-height: 100vh; background: var(--bg); color: var(--text); }
+.pf-top { display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; border-bottom: 1px solid var(--line); gap: 12px; }
+.pf-top-actions { display: flex; align-items: center; gap: 10px; }
+.pf-link { font-size: 13px; font-weight: 600; color: var(--muted); }
+.pf-link:hover { color: var(--accent-2); }
+.pf-btn { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; }
+.pf-btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.pf-shell { max-width: 720px; margin: 0 auto; padding: 36px 20px 64px; }
+.pf-head h1 { font-family: var(--font-display); font-size: 28px; margin: 0 0 8px; }
+.pf-head p { color: var(--muted); margin: 0 0 10px; }
+.pf-user { font-size: 14px; font-weight: 600; color: var(--accent-2); margin-bottom: 24px; }
+.pf-muted { color: var(--faint); font-size: 14px; }
+.pf-login-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 28px; text-align: center; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+.pf-overall { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin-bottom: 22px; }
+.pf-overall-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 600; }
+.pf-overall-meta { margin-top: 8px; font-size: 12.5px; color: var(--faint); }
+.pf-bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.pf-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 999px; transition: width .25s ease; }
+.pf-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.pf-item { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.pf-item.done { border-color: rgba(90, 180, 140, 0.45); }
+.pf-item.progress { border-color: rgba(232, 168, 96, 0.45); }
+.pf-item-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.pf-item h3 { margin: 0; font-family: var(--font-display); font-size: 16px; line-height: 1.35; }
+.pf-badge { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); white-space: nowrap; }
+.pf-badge.done { color: #6ec4a0; }
+.pf-badge.progress { color: #e8a860; }
+.pf-badge.missing { color: var(--faint); }
+.pf-item-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-item-actions button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+.pf-item-actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.pf-item-actions button:disabled { opacity: .35; cursor: default; }
 
 /* ===== Nav ===== */
 .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; transition: background .3s ease, border-color .3s ease, backdrop-filter .3s; border-bottom: 1px solid transparent; }

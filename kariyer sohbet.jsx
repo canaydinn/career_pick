@@ -1,8 +1,50 @@
-/* global React, ReactDOM, CP_SOHBET */
+/* global React, ReactDOM, CP_SOHBET, CPAuth */
 const { useState: useStateK, useEffect: useEffectK, useRef: useRefK } = React;
 const IcK = window.CPIcon;
 const LogoK = window.CPLogo;
 const MAX_FOLLOWUPS = 1;
+
+async function persistAnswer(meta, answerText) {
+  if (!window.CPAuth) return;
+  try {
+    await CPAuth.saveAnswer({
+      questionId: (meta && meta.key) || null,
+      questionText: (meta && meta.q) || null,
+      answerText,
+      sessionId: CPAuth.getSessionId(),
+    });
+  } catch (e) {
+    console.warn("[SOHBET] persistAnswer:", e.message || e);
+  }
+}
+
+async function persistResults(recs, skills) {
+  if (!window.CPAuth) return;
+  try {
+    const user = await CPAuth.getUser();
+    if (!user) return;
+    if (Array.isArray(recs) && recs.length) {
+      await CPAuth.saveRecommendations(recs.map((r) => ({
+        training_id: r.link || r.ad,
+        training_name: r.ad,
+        status: "eksik",
+      })));
+    }
+    if (Array.isArray(skills) && skills.length) {
+      await CPAuth.saveInsights(skills.map((sk) => ({
+        category: sk.yetkinlik || "yetkinlik",
+        insight_text: [
+          sk.yetkinlik || "Yetkinlik",
+          typeof sk.puan !== "undefined" ? `${sk.puan}/5` : "",
+          sk.seviye || "",
+          sk.yorum || "",
+        ].filter(Boolean).join(" — "),
+      })));
+    }
+  } catch (e) {
+    console.warn("[SOHBET] persistResults:", e.message || e);
+  }
+}
 
 /* ---------- Backend cagrilari ---------- */
 async function apiDegerlendir(soru, cevap, meta, attempt) {
@@ -89,9 +131,25 @@ function KariyerSohbet() {
   const [recs, setRecs] = useStateK([]);
   const [skills, setSkills] = useStateK([]);
   const [selected, setSelected] = useStateK(() => ProfileStore.getAll());
+  const [authUser, setAuthUser] = useStateK(null);
+  const [authReady, setAuthReady] = useStateK(false);
 
   const bodyRef = useRefK(null);
   const taRef = useRefK(null);
+
+  useEffectK(() => {
+    let off = () => {};
+    if (!window.CPAuth) { setAuthReady(true); return; }
+    (async () => {
+      await CPAuth.init();
+      setAuthReady(true);
+      off = CPAuth.onAuthStateChange(async (u) => {
+        setAuthUser(u);
+        if (u) await CPAuth.ensureProfile(u);
+      });
+    })();
+    return () => off();
+  }, []);
 
   const qMeta = (i) => questions[i] || null;
   const questionText = (i) => (questions[i] ? questions[i].q : "");
@@ -207,8 +265,11 @@ function KariyerSohbet() {
   async function runRecommend(finalAnswers, qs) {
     try {
       const data = await apiOner(buildCevaplar(finalAnswers, qs || questions));
-      setRecs(Array.isArray(data.recommendations) ? data.recommendations : []);
-      setSkills(Array.isArray(data.yetkinlikler) ? data.yetkinlikler : []);
+      const nextRecs = Array.isArray(data.recommendations) ? data.recommendations : [];
+      const nextSkills = Array.isArray(data.yetkinlikler) ? data.yetkinlikler : [];
+      setRecs(nextRecs);
+      setSkills(nextSkills);
+      await persistResults(nextRecs, nextSkills);
     } catch (e) {
       console.error("[SOHBET] recommend:", e.message);
       setRecs([]);
@@ -283,6 +344,7 @@ function KariyerSohbet() {
         const newAnswers = answers.slice();
         newAnswers[idx] = q;
         setAnswers(newAnswers);
+        await persistAnswer(meta, q);
         await advanceAfterAnswer(newAnswers, idx);
       }
     } catch (e) {
@@ -323,13 +385,33 @@ function KariyerSohbet() {
     const id = rec.link || rec.ad;
     ProfileStore.add({ id, ad: rec.ad, kurum: rec.kurum, link: rec.link, sure: rec.sure });
     setSelected(ProfileStore.getAll());
+    if (window.CPAuth) {
+      CPAuth.saveRecommendations([{
+        training_id: id,
+        training_name: rec.ad,
+        status: "devam_ediyor",
+      }]);
+    }
   }
   function onRemove(id) {
     ProfileStore.remove(id);
     setSelected(ProfileStore.getAll());
   }
 
+  async function loginGoogle() {
+    try {
+      sessionStorage.setItem("cp_auth_next", "kariyer%20sohbet.html");
+      await CPAuth.signInWithGoogle(location.origin + "/auth-callback.html");
+    } catch (e) {
+      alert((S.auth && S.auth.error) || e.message);
+    }
+  }
+  async function logout() {
+    if (window.CPAuth) await CPAuth.signOut();
+  }
+
   function restart() {
+    if (window.CPAuth) CPAuth.newSessionId();
     setAnswers([]);
     setStep(0);
     setEditingIndex(null);
@@ -359,10 +441,29 @@ function KariyerSohbet() {
     ? S.editingBadge(editingIndex + 1, progressTotal)
     : (showChatUI ? S.progress(Math.min(progressCurrent, progressTotal), progressTotal) : `${progressTotal} / ${progressTotal}`);
 
+  const authLabel = authUser
+    ? ((authUser.user_metadata && (authUser.user_metadata.full_name || authUser.user_metadata.name)) || authUser.email || "")
+    : "";
+
   return (
     <div className="cs-page">
       <div className="cs-top">
         <a href="index.html" aria-label={S.brand} style={{ display: "inline-flex" }}><LogoK /></a>
+        <div className="cs-auth">
+          <a className="cs-auth-link" href="profil.html">{(S.auth && S.auth.profile) || "Profil"}</a>
+          {authReady && authUser ? (
+            <React.Fragment>
+              <span className="cs-auth-name" title={authUser.email || ""}>{authLabel}</span>
+              <button type="button" className="cs-auth-btn ghost" onClick={logout}>
+                {(S.auth && S.auth.logout) || "Çıkış"}
+              </button>
+            </React.Fragment>
+          ) : (
+            <button type="button" className="cs-auth-btn" onClick={loginGoogle} disabled={!authReady}>
+              {(S.auth && S.auth.login) || "Gmail ile giriş"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="cs-shell">

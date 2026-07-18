@@ -1,13 +1,6 @@
 """
-CareerPick — Lokal onizleme sunucusu (sadece gormek/test icin)
-==============================================================
-Statik dosyalari servis eder VE POST /api/sohbet ile /api/assessment
-isteklerini ilgili motorlara yonlendirir. Vercel'i beklemeden yeni
-"Kariyer Sohbeti" sayfasini tarayicidan gorebilirsin.
-
-Kullanim:
-    pip install -r requirements.txt     # ilk sefer
-    python scripts/dev_server.py        # http://localhost:8000/kariyer%20sohbet.html
+CareerPick — Lokal onizleme sunucusu
+Statik dosyalar + /api/sohbet + /api/public-config
 """
 
 import os
@@ -22,7 +15,7 @@ PORT = int(os.environ.get("PORT", "8000"))
 def _load_env():
     p = os.path.join(ROOT, ".env.local")
     if not os.path.exists(p):
-        print("[UYARI] .env.local yok — AI cagrilari calismayabilir.")
+        print("[UYARI] .env.local yok — AI / Supabase cagrilari calismayabilir.")
         return
     with open(p, "r", encoding="utf-8") as f:
         for line in f:
@@ -67,8 +60,24 @@ class DevHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path == "/api/public-config":
+            url = os.environ.get("SUPABASE_URL", "")
+            anon = os.environ.get("SUPABASE_ANON_KEY", "")
+            if not url or not anon:
+                return self._json(503, {"configured": False, "error": "Supabase yapilandirmasi eksik."})
+            return self._json(200, {
+                "configured": True,
+                "supabaseUrl": url,
+                "supabaseAnonKey": anon,
+            })
+        return super().do_GET()
+
     def do_POST(self):
         path = self.path.split("?")[0]
+        if path == "/api/public-config":
+            return self.do_GET()
         if path != "/api/sohbet":
             return self._json(404, {"error": "Bulunamadi"})
         try:
@@ -105,5 +114,6 @@ class DevHandler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"Onizleme -> http://localhost:{PORT}/kariyer%20sohbet.html")
+    print(f"Profil   -> http://localhost:{PORT}/profil.html")
     print("Durdurmak icin Ctrl+C")
     ThreadingHTTPServer(("0.0.0.0", PORT), DevHandler).serve_forever()
