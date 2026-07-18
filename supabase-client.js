@@ -310,9 +310,11 @@
   }
 
   function overallProgress(trainings) {
+    // Genel ilerleme = tamamlanan egitim / toplam (2/6 → %33)
+    // "devam_ediyor" kart progress'inde kalir; genel orani sismemesin
     if (!trainings || !trainings.length) return 0;
-    const sum = trainings.reduce((acc, t) => acc + statusProgress(t.status), 0);
-    return Math.round(sum / trainings.length);
+    const done = trainings.filter((t) => t.status === "tamamlandi").length;
+    return Math.round((done / trainings.length) * 100);
   }
 
   global.CPAuth = {
