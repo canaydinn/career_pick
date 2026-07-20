@@ -25,6 +25,13 @@
       "maxDuration": 90
     }
   },
+  "redirects": [
+    {
+      "source": "/Fiyatlandirma.html",
+      "destination": "/fiyatlandirma.html",
+      "permanent": true
+    }
+  ],
   "crons": [
     {
       "path": "/api/reminders",
