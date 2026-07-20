@@ -28,6 +28,12 @@ window.CP_SOHBET = {
       loading: "Oturum kontrol ediliyor…",
       notConfigured: "Giriş sistemi henüz yapılandırılmadı. SUPABASE_URL ve SUPABASE_ANON_KEY ortam değişkenlerini ekleyip yeniden deploy et.",
     },
+    draft: {
+      banner: (a, b) => `Soru ${a}/${b}'da kalmıştın`,
+      resume: "Devam et",
+      restart: "Baştan başla",
+      resumedChip: "Kaldığın yerden",
+    },
     questions: [
       { key: "hedef_sektor",      type: "profile",  q: "Hangi sektörde çalışmak istiyorsun?",                          placeholder: "Örn. yazılım, finans, sağlık, inşaat…" },
       { key: "mevcut_yetenekler", type: "profile",  q: "Şu anda hangi beceri ve bilgilere sahipsin?",                  placeholder: "Örn. Excel, Python, iletişim, tasarım…" },
@@ -100,6 +106,12 @@ window.CP_SOHBET = {
       requiredBody: "Career Chat requires a Gmail account. Your answers and course recommendations will be saved to your profile.",
       loading: "Checking session…",
       notConfigured: "Auth is not configured yet. Add SUPABASE_URL and SUPABASE_ANON_KEY, then redeploy.",
+    },
+    draft: {
+      banner: (a, b) => `You left off at question ${a}/${b}`,
+      resume: "Continue",
+      restart: "Start over",
+      resumedChip: "Picking up where you left off",
     },
     questions: [
       { key: "hedef_sektor",      type: "profile",  q: "Which sector would you like to work in?",                       placeholder: "e.g. software, finance, healthcare, construction…" },

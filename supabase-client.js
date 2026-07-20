@@ -27,6 +27,13 @@
     }
   }
 
+  function setSessionId(id) {
+    const sid = String(id || "").trim();
+    if (!sid) return getSessionId();
+    try { sessionStorage.setItem(SESSION_KEY, sid); } catch (e) { /* ignore */ }
+    return sid;
+  }
+
   function newSessionId() {
     const id = uuid();
     try { sessionStorage.setItem(SESSION_KEY, id); } catch (e) { /* ignore */ }
@@ -883,6 +890,214 @@
     return "kariyer%20sohbet.html";
   }
 
+  var CHAT_DRAFT_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+  function parseDraftJson(raw, fallback) {
+    if (raw == null) return fallback;
+    if (typeof raw === "object") return raw;
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function normalizeDraftRow(row) {
+    if (!row || !row.id) return null;
+    if (row.status !== "in_progress") return null;
+    if (row.phase === "result") return null;
+    const updated = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+    if (!updated || Date.now() - updated > CHAT_DRAFT_TTL_MS) return null;
+
+    const answers = parseDraftJson(row.answers_json, []);
+    const attempts = parseDraftJson(row.attempts_json, {});
+    const scenarios = parseDraftJson(row.scenario_questions_json, []);
+    if (!Array.isArray(answers) || !attempts || typeof attempts !== "object" || !Array.isArray(scenarios)) {
+      return null;
+    }
+
+    let step = Number(row.step);
+    if (!Number.isFinite(step) || step < 0) step = 0;
+
+    return {
+      id: row.id,
+      session_id: row.session_id,
+      status: row.status,
+      phase: row.phase === "result" ? "result" : "asking",
+      step: Math.floor(step),
+      locale: row.locale === "en" ? "en" : "tr",
+      answers: answers.map((a) => (a == null ? "" : String(a))),
+      attempts: attempts,
+      scenario_questions: scenarios,
+      scenarios_ready: !!row.scenarios_ready,
+      updated_at: row.updated_at,
+      created_at: row.created_at,
+    };
+  }
+
+  async function fetchActiveChatDraft() {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return null;
+    const { data, error } = await c
+      .from("chat_drafts")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("status", "in_progress")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.warn("[CPAuth] fetchActiveChatDraft:", error.message);
+      return null;
+    }
+    return normalizeDraftRow(data);
+  }
+
+  /**
+   * Aktif in_progress draft'i upsert et.
+   * state: { sessionId, phase, step, locale, answers, attempts, scenarioQuestions, scenariosReady }
+   */
+  async function saveChatDraft(state) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !state) return { ok: false, reason: "auth_or_empty" };
+
+    const phase = state.phase === "result" ? "result" : "asking";
+    const status = state.status === "completed"
+      ? "completed"
+      : (state.status === "abandoned" ? "abandoned" : "in_progress");
+    if (status !== "in_progress") {
+      return { ok: false, reason: "use_complete_or_abandon" };
+    }
+
+    const session_id = setSessionId(state.sessionId || getSessionId());
+    let step = Number(state.step);
+    if (!Number.isFinite(step) || step < 0) step = 0;
+    const answers = Array.isArray(state.answers) ? state.answers : [];
+    const attempts = state.attempts && typeof state.attempts === "object" ? state.attempts : {};
+    const scenarioQuestions = Array.isArray(state.scenarioQuestions) ? state.scenarioQuestions : [];
+
+    const payload = {
+      user_id: user.id,
+      session_id,
+      status: "in_progress",
+      phase,
+      step: Math.floor(step),
+      locale: state.locale === "en" ? "en" : "tr",
+      answers_json: answers,
+      attempts_json: attempts,
+      scenario_questions_json: scenarioQuestions,
+      scenarios_ready: !!state.scenariosReady,
+      updated_at: new Date().toISOString(),
+    };
+
+    const existingRes = await c
+      .from("chat_drafts")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("status", "in_progress")
+      .maybeSingle();
+    const existingId = existingRes.data && existingRes.data.id;
+
+    if (existingId) {
+      const { data, error } = await c
+        .from("chat_drafts")
+        .update(payload)
+        .eq("id", existingId)
+        .eq("user_id", user.id)
+        .select()
+        .maybeSingle();
+      if (error) {
+        console.warn("[CPAuth] saveChatDraft update:", error.message);
+        return { ok: false, reason: error.message };
+      }
+      return { ok: true, draft: data };
+    }
+
+    const { data, error } = await c
+      .from("chat_drafts")
+      .insert(payload)
+      .select()
+      .maybeSingle();
+    if (error) {
+      // Race: baska in_progress oluşmuş olabilir — update dene
+      if (String(error.message || "").indexOf("chat_drafts_one_in_progress") !== -1
+        || error.code === "23505") {
+        const again = await c
+          .from("chat_drafts")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("status", "in_progress")
+          .maybeSingle();
+        if (again.data && again.data.id) {
+          const { data: d2, error: e2 } = await c
+            .from("chat_drafts")
+            .update(payload)
+            .eq("id", again.data.id)
+            .select()
+            .maybeSingle();
+          if (e2) {
+            console.warn("[CPAuth] saveChatDraft race update:", e2.message);
+            return { ok: false, reason: e2.message };
+          }
+          return { ok: true, draft: d2 };
+        }
+      }
+      console.warn("[CPAuth] saveChatDraft insert:", error.message);
+      return { ok: false, reason: error.message };
+    }
+    return { ok: true, draft: data };
+  }
+
+  async function completeChatDraft(sessionId) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return { ok: false, reason: "auth" };
+    const sid = sessionId || getSessionId();
+    const { error } = await c
+      .from("chat_drafts")
+      .update({
+        status: "completed",
+        phase: "result",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id)
+      .eq("status", "in_progress");
+    if (error) {
+      console.warn("[CPAuth] completeChatDraft:", error.message);
+      return { ok: false, reason: error.message };
+    }
+    return { ok: true, session_id: sid };
+  }
+
+  async function abandonChatDraft(sessionId) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return { ok: false, reason: "auth" };
+    const { error } = await c
+      .from("chat_drafts")
+      .update({
+        status: "abandoned",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id)
+      .eq("status", "in_progress");
+    if (error) {
+      console.warn("[CPAuth] abandonChatDraft:", error.message);
+      return { ok: false, reason: error.message };
+    }
+    if (sessionId) setSessionId(sessionId);
+    else newSessionId();
+    return { ok: true };
+  }
+
+  /** Profil / banner icin ozet */ 
+  async function hasResumableChatDraft() {
+    const d = await fetchActiveChatDraft();
+    return !!d;
+  }
+
   /**
    * Sohbet sonu yetkinlik snapshot'i.
    * skills: [{ yetkinlik, puan, seviye, yorum }]
@@ -1314,8 +1529,14 @@
     signOut,
     onAuthStateChange,
     getSessionId,
+    setSessionId,
     newSessionId,
     saveAnswer,
+    saveChatDraft,
+    fetchActiveChatDraft,
+    completeChatDraft,
+    abandonChatDraft,
+    hasResumableChatDraft,
     saveRecommendations,
     saveInsights,
     fetchTrainings,

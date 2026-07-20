@@ -106,6 +106,17 @@ SQL Editor’da çalıştır:
 - Profil: **Sektör notların**; sohbet sonuç: öne çıkan not + tümünü gör
 - Migrasyon öncesi istemci fallback: `sector-notes-data.js`
 
+## 6g. Sohbet draft — kaldığı yerden devam (v0.8+)
+
+SQL Editor’da çalıştır:
+
+`migrations/20260720210000_chat_drafts.sql`
+
+- `chat_drafts` (answers, attempts, **scenario_questions_json**, status)
+- Kullanıcı başına tek `in_progress` (partial unique index)
+- Sohbet banner: Devam et / Baştan başla; profil linki `?resume=1`
+- `user_answers` audit olarak kalır; UI hydrate kaynağı draft’tır
+
 ## 7. Haftalık e-posta hatırlatması (opsiyonel)
 
 Vercel env:

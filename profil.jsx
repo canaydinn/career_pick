@@ -71,10 +71,11 @@ function ProfilPage() {
   const [microTasks, setMicroTasks] = useState([]);
   const [hasSnapshot, setHasSnapshot] = useState(false);
   const [sectorPack, setSectorPack] = useState(null);
+  const [hasDraft, setHasDraft] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function loadPlan() {
-    const [t, steps, g, cmp, micros, snaps, pack] = await Promise.all([
+    const [t, steps, g, cmp, micros, snaps, pack, draft] = await Promise.all([
       CPAuth.fetchTrainings(),
       CPAuth.fetchActiveRoadmap(),
       CPAuth.fetchCareerGoal(),
@@ -82,6 +83,7 @@ function ProfilPage() {
       CPAuth.fetchWeekMicroTasks(),
       CPAuth.fetchLastSnapshots(1),
       CPAuth.fetchSectorNotesPack({ locale: lang, personalize: false }),
+      CPAuth.fetchActiveChatDraft(),
     ]);
     setTrainings(t);
     setRoadmap(steps);
@@ -90,6 +92,7 @@ function ProfilPage() {
     setMicroTasks(micros || []);
     setHasSnapshot(!!(snaps && snaps.length));
     setSectorPack(pack || null);
+    setHasDraft(!!draft);
 
     // Opsiyonel kisilestirme — notlar zaten gorunur; cumleler sonra eklenir
     if (pack && pack.notes && pack.notes.length) {
@@ -134,6 +137,7 @@ function ProfilPage() {
         setMicroTasks([]);
         setHasSnapshot(false);
         setSectorPack(null);
+        setHasDraft(false);
       }
     }
 
@@ -271,6 +275,13 @@ function ProfilPage() {
           </div>
         ) : (
           <React.Fragment>
+            {hasDraft ? (
+              <div className="pf-draft-resume">
+                <p>{S.draftResumeTitle}</p>
+                <a href="kariyer%20sohbet.html?resume=1">{S.draftResumeLink}</a>
+              </div>
+            ) : null}
+
             <section className="pf-overall">
               <div className="pf-overall-row">
                 <span>{S.overall}</span>

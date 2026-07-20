@@ -213,14 +213,19 @@ function KariyerSohbet() {
   const [authUser, setAuthUser] = useStateK(null);
   const [authReady, setAuthReady] = useStateK(false);
   const [authConfigured, setAuthConfigured] = useStateK(false);
+  const [pendingDraft, setPendingDraft] = useStateK(null);
+  const [resumed, setResumed] = useStateK(false);
+  const [draftGateDone, setDraftGateDone] = useStateK(false);
 
   const bodyRef = useRefK(null);
   const taRef = useRefK(null);
+  const skipDraftSave = useRefK(false);
+  const draftTimer = useRefK(null);
 
   useEffectK(() => {
     let alive = true;
     let off = () => {};
-    if (!window.CPAuth) { setAuthReady(true); setAuthConfigured(false); return; }
+    if (!window.CPAuth) { setAuthReady(true); setAuthConfigured(false); setDraftGateDone(true); return; }
     (async () => {
       await CPAuth.init();
       if (!alive) return;
@@ -240,6 +245,147 @@ function KariyerSohbet() {
     })();
     return () => { alive = false; off(); };
   }, []);
+
+  useEffectK(() => {
+    if (!authReady) return;
+    if (!authUser || !window.CPAuth) {
+      setPendingDraft(null);
+      setDraftGateDone(true);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const d = await CPAuth.fetchActiveChatDraft();
+        if (!alive) return;
+        const meaningful = d && (
+          d.step > 0
+          || (Array.isArray(d.answers) && d.answers.some((a) => String(a || "").trim()))
+          || d.scenarios_ready
+        );
+        if (!meaningful) {
+          setPendingDraft(null);
+          return;
+        }
+        const wantResume = typeof location !== "undefined"
+          && /(?:\?|&)resume=1(?:&|$)/.test(location.search || "");
+        if (wantResume) {
+          skipDraftSave.current = true;
+          hydrateFromDraft(d);
+          setResumed(true);
+          setPendingDraft(null);
+          setTimeout(() => { skipDraftSave.current = false; }, 700);
+          try {
+            const url = new URL(location.href);
+            url.searchParams.delete("resume");
+            history.replaceState({}, "", url.pathname + url.search + url.hash);
+          } catch (e) { /* ignore */ }
+        } else {
+          setPendingDraft(d);
+        }
+      } catch (e) {
+        console.warn("[SOHBET] draft fetch:", e.message || e);
+        setPendingDraft(null);
+      } finally {
+        if (alive) setDraftGateDone(true);
+      }
+    })();
+    return () => { alive = false; };
+  }, [authReady, authUser]);
+
+  // Debounced draft upsert (300–500ms)
+  useEffectK(() => {
+    if (!draftGateDone || pendingDraft || !authUser || !window.CPAuth) return;
+    if (skipDraftSave.current) return;
+    if (phase !== "asking") return;
+    const hasContent = step > 0
+      || answers.some((a) => String(a || "").trim())
+      || scenariosReady
+      || Object.keys(attempts || {}).length > 0;
+    if (!hasContent) return;
+
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      CPAuth.saveChatDraft({
+        sessionId: CPAuth.getSessionId(),
+        phase: "asking",
+        step,
+        locale: lang,
+        answers,
+        attempts,
+        scenarioQuestions: scenarioQs,
+        scenariosReady,
+      }).catch(() => {});
+    }, 400);
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, [answers, step, phase, attempts, scenarioQs, scenariosReady, draftGateDone, pendingDraft, authUser, lang]);
+
+  function hydrateFromDraft(d) {
+    if (!d) return;
+    if (d.session_id && window.CPAuth) CPAuth.setSessionId(d.session_id);
+    setAnswers(Array.isArray(d.answers) ? d.answers.slice() : []);
+    setAttempts(d.attempts && typeof d.attempts === "object" ? d.attempts : {});
+    setStep(typeof d.step === "number" ? d.step : 0);
+    setPhase("asking");
+    setEditingIndex(null);
+    setErrorMsg("");
+    setRecomputing(false);
+    setRecs([]);
+    setSkills([]);
+    setSkillCompare(null);
+    setSectorFeatured(null);
+    setInput("");
+    const scenarios = Array.isArray(d.scenario_questions) ? d.scenario_questions : [];
+    if (scenarios.length) {
+      setScenarioQs(scenarios);
+      setScenariosReady(true);
+      setLoadingScenarios(false);
+    } else {
+      setScenarioQs([]);
+      setScenariosReady(false);
+      const profileFilled = (d.answers || []).slice(0, PROFILE_N).filter((a) => String(a || "").trim()).length >= PROFILE_N;
+      if (profileFilled && (d.step || 0) >= PROFILE_N) {
+        loadScenarios((d.answers || []).slice(0, PROFILE_N));
+      }
+    }
+  }
+
+  async function onResumeDraft() {
+    if (!pendingDraft) return;
+    skipDraftSave.current = true;
+    hydrateFromDraft(pendingDraft);
+    setPendingDraft(null);
+    setResumed(true);
+    setTimeout(() => { skipDraftSave.current = false; }, 700);
+  }
+
+  async function onAbandonDraft() {
+    skipDraftSave.current = true;
+    if (window.CPAuth) {
+      try { await CPAuth.abandonChatDraft(); } catch (e) { /* ignore */ }
+      CPAuth.newSessionId();
+    }
+    setPendingDraft(null);
+    setResumed(false);
+    setAnswers([]);
+    setStep(0);
+    setEditingIndex(null);
+    setErrorMsg("");
+    setAttempts({});
+    setRecomputing(false);
+    setRecs([]);
+    setSkills([]);
+    setSkillCompare(null);
+    setSectorFeatured(null);
+    setScenarioQs([]);
+    setScenariosReady(false);
+    setLoadingScenarios(false);
+    setPhase("asking");
+    setInput("");
+    setTimeout(() => { skipDraftSave.current = false; }, 400);
+  }
 
   const qMeta = (i) => questions[i] || null;
   const questionText = (i) => (questions[i] ? questions[i].q : "");
@@ -419,6 +565,11 @@ function KariyerSohbet() {
       setSectorFeatured(null);
     } finally {
       setPhase("result");
+      setResumed(false);
+      setPendingDraft(null);
+      if (window.CPAuth) {
+        try { await CPAuth.completeChatDraft(); } catch (err) { /* ignore */ }
+      }
     }
   }
 
@@ -555,8 +706,12 @@ function KariyerSohbet() {
     if (window.CPAuth) await CPAuth.signOut();
   }
 
-  function restart() {
-    if (window.CPAuth) CPAuth.newSessionId();
+  async function restart() {
+    skipDraftSave.current = true;
+    if (window.CPAuth) {
+      try { await CPAuth.abandonChatDraft(); } catch (e) { /* ignore */ }
+      CPAuth.newSessionId();
+    }
     setAnswers([]);
     setStep(0);
     setEditingIndex(null);
@@ -572,6 +727,9 @@ function KariyerSohbet() {
     setLoadingScenarios(false);
     setPhase("asking");
     setInput("");
+    setPendingDraft(null);
+    setResumed(false);
+    setTimeout(() => { skipDraftSave.current = false; }, 400);
   }
 
   function onKey(e) {
@@ -592,7 +750,24 @@ function KariyerSohbet() {
     ? ((authUser.user_metadata && (authUser.user_metadata.full_name || authUser.user_metadata.name)) || authUser.email || "")
     : "";
   const A = S.auth || {};
+  const D = S.draft || {};
   const gateBlocked = !authReady || !authUser;
+  const waitingDraftChoice = !!pendingDraft;
+  const draftChecking = !!authUser && !draftGateDone;
+
+  const draftBannerStep = pendingDraft
+    ? Math.min((pendingDraft.step || 0) + 1, Math.max(
+      pendingDraft.scenarios_ready
+        ? PROFILE_N + (pendingDraft.scenario_questions || []).length
+        : PROFILE_N + EXPECTED_SCENARIOS,
+      1
+    ))
+    : 0;
+  const draftBannerTotal = pendingDraft
+    ? (pendingDraft.scenarios_ready
+      ? Math.max(PROFILE_N + (pendingDraft.scenario_questions || []).length, PROFILE_N)
+      : PROFILE_N + EXPECTED_SCENARIOS)
+    : progressTotal;
 
   return (
     <div className="cs-page">
@@ -638,25 +813,56 @@ function KariyerSohbet() {
         </div>
       ) : (
       <div className="cs-shell">
+        {waitingDraftChoice ? (
+          <div className="cs-draft-banner" role="region" aria-label={D.resume || "Draft"}>
+            <p className="cs-draft-text">
+              {typeof D.banner === "function"
+                ? D.banner(draftBannerStep, draftBannerTotal)
+                : (D.banner || "")}
+            </p>
+            <div className="cs-draft-actions">
+              <button type="button" className="cs-draft-btn primary" onClick={onResumeDraft}>
+                {D.resume || "Devam et"}
+              </button>
+              <button type="button" className="cs-draft-btn" onClick={onAbandonDraft}>
+                {D.restart || "Baştan başla"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="cs-head">
           {isEditing ? (
-            <button className="cs-back" onClick={cancelEdit} disabled={busy}>
+            <button className="cs-back" onClick={cancelEdit} disabled={busy || waitingDraftChoice}>
               <IcK name="close" size={16} /> {S.cancelEdit}
             </button>
           ) : (
-            <button className="cs-back" onClick={goBack} disabled={backDisabled}>
+            <button className="cs-back" onClick={goBack} disabled={backDisabled || waitingDraftChoice}>
               <IcK name="back" size={16} /> {S.back}
             </button>
           )}
-          <div className="cs-title">{S.headerTitle}</div>
+          <div className="cs-title">
+            {S.headerTitle}
+            {resumed && !waitingDraftChoice ? (
+              <span className="cs-resumed-chip">{D.resumedChip || ""}</span>
+            ) : null}
+          </div>
           <div className="cs-progress">{displayProgress}</div>
         </div>
 
         <div className="cs-progress-track">
-          <div className="cs-progress-fill" style={{ width: progressPct + "%" }}></div>
+          <div className="cs-progress-fill" style={{ width: (waitingDraftChoice ? 0 : progressPct) + "%" }}></div>
         </div>
 
-        {showChatUI ? (
+        {draftChecking ? (
+          <div className="cs-draft-wait">
+            <p className="cs-gate-muted">{(S.auth && S.auth.loading) || "…"}</p>
+          </div>
+        ) : waitingDraftChoice ? (
+          <div className="cs-draft-wait">
+            <p>{S.greeting}</p>
+          </div>
+        ) : showChatUI ? (
           <React.Fragment>
             <div className="cs-body" ref={bodyRef}>
               {msgs.map((m) => (

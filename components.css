@@ -78,8 +78,101 @@
 .cs-gate-muted { color: var(--faint); }
 .cs-gate-btn { margin-top: 8px; padding: 12px 22px; font-size: 14.5px; }
 .cs-shell { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 22px 20px 0; display: flex; flex-direction: column; min-height: 0; }
+
+.cs-draft-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(232, 168, 96, 0.45);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(232, 168, 96, 0.12), rgba(255,255,255,0.02));
+}
+.cs-draft-text {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  flex: 1;
+  min-width: 180px;
+}
+.cs-draft-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cs-draft-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.cs-draft-btn.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.cs-draft-btn:hover { border-color: var(--accent); color: var(--text); }
+.cs-draft-btn.primary:hover { filter: brightness(1.05); color: var(--accent-ink); }
+.cs-draft-wait {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 4px 24px;
+}
+.cs-draft-wait p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.55;
+  max-width: 48ch;
+}
+.cs-resumed-chip {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #e8a860;
+  border: 1px solid rgba(232, 168, 96, 0.5);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.pf-draft-resume {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px dashed rgba(232, 168, 96, 0.5);
+  border-radius: 14px;
+  background: rgba(232, 168, 96, 0.06);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.pf-draft-resume p { margin: 0; font-size: 14px; color: var(--muted); flex: 1; min-width: 160px; }
+.pf-draft-resume a {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+}
+.pf-draft-resume a:hover { text-decoration: underline; }
 .cs-head { display: flex; align-items: center; gap: 14px; padding: 4px 0 16px; }
-.cs-head .cs-title { flex: 1; text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 18px; }
+.cs-head .cs-title {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .cs-back { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--line); color: var(--muted); padding: 8px 13px; border-radius: 999px; font-size: 13px; font-weight: 600; transition: color .15s, border-color .15s; }
 .cs-back:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
 .cs-back:disabled { opacity: .35; cursor: default; }
