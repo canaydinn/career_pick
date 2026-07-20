@@ -1,4 +1,4 @@
-/* global React, ReactDOM, CP_SOHBET, CPAuth */
+/* global React, ReactDOM, CP_SOHBET, CPAuth, CPShareCardModal */
 const { useState: useStateK, useEffect: useEffectK, useRef: useRefK } = React;
 const IcK = window.CPIcon;
 const LogoK = window.CPLogo;
@@ -216,6 +216,7 @@ function KariyerSohbet() {
   const [pendingDraft, setPendingDraft] = useStateK(null);
   const [resumed, setResumed] = useStateK(false);
   const [draftGateDone, setDraftGateDone] = useStateK(false);
+  const [shareOpen, setShareOpen] = useStateK(false);
 
   const bodyRef = useRefK(null);
   const taRef = useRefK(null);
@@ -919,6 +920,22 @@ function KariyerSohbet() {
               <h2>{S.result.title}</h2>
               <p>{S.result.sub}</p>
             </div>
+
+            <div className="cs-share-row">
+              <button type="button" className="cs-auth-btn" onClick={() => setShareOpen(true)}>
+                {(S.result && S.result.shareCardBtn) || "Özet kartı"}
+              </button>
+            </div>
+
+            {typeof CPShareCardModal === "function" ? (
+              <CPShareCardModal
+                open={shareOpen}
+                onClose={() => setShareOpen(false)}
+                locale={lang}
+                labels={(S.result && S.result.shareCard) || {}}
+                skills={skills}
+              />
+            ) : null}
 
             {skills.length > 0 && (
               <div className="cs-skills">

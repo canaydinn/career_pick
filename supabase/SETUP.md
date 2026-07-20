@@ -127,6 +127,17 @@ SQL Editor’da çalıştır:
 - Profil: **Haftalık check-in** (`#check-in`) — 1–2 soru, opsiyonel Claude yansıma
 - Hatırlatma mailine “Check-in’i tamamla” CTA (opt-in)
 
+## 6i. Paylaşılabilir özet kartı (v0.10+)
+
+1. Aşama (DB gerekmez): profil + sohbet sonucundan **Özet kartı** → PNG indir + LinkedIn metni kopyala (`share-card.js`).
+
+2. Aşama (public link): SQL Editor’da çalıştır:
+
+`migrations/20260720230000_share_cards.sql`
+
+- `share_cards` (token, payload_json, is_public)
+- Sayfa: `/ozet.html?t=…` (`noindex`)
+
 ## 7. Haftalık e-posta hatırlatması (opsiyonel)
 
 Vercel env:

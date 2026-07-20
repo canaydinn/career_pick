@@ -879,6 +879,108 @@ body[data-layout="stage"] .chat-body { height: 420px; }
 .faq-a { max-height: 0; overflow: hidden; transition: max-height .3s ease; }
 .faq-a-inner { padding: 0 22px 20px; color: var(--muted); font-size: 15.5px; line-height: 1.6; }
 
+/* ===== Share card modal ===== */
+.sc-overlay {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(0,0,0,0.62);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.sc-modal {
+  width: min(640px, 100%);
+  max-height: min(92vh, 900px);
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 20px 22px 24px;
+}
+.sc-modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 14px;
+}
+.sc-modal-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+}
+.sc-close {
+  background: transparent; border: none; color: var(--muted);
+  font-size: 28px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.sc-close:hover { color: var(--text); }
+.sc-muted, .sc-empty, .sc-hint, .sc-msg { color: var(--muted); font-size: 14px; line-height: 1.45; }
+.sc-empty { margin: 12px 0 8px; }
+.sc-toggle-name {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--muted); margin-bottom: 12px;
+}
+.sc-card {
+  position: relative;
+  border-radius: 16px;
+  padding: 22px 22px 18px;
+  background: linear-gradient(145deg, #0f1419 0%, #152028 45%, #1a2830 100%);
+  border: 1px solid rgba(255,255,255,0.08);
+  min-height: 280px;
+  overflow: hidden;
+}
+.sc-card::after {
+  content: "";
+  position: absolute; right: -40px; top: -60px;
+  width: 220px; height: 220px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(232,168,96,0.22), transparent 70%);
+  pointer-events: none;
+}
+.sc-card-brand {
+  font-family: var(--font-display);
+  font-weight: 700; font-size: 15px; color: #e8a860;
+  margin-bottom: 10px; position: relative; z-index: 1;
+}
+.sc-card-name { font-size: 13px; color: rgba(255,255,255,0.5); margin-bottom: 8px; position: relative; z-index: 1; }
+.sc-card-goal {
+  margin: 0 0 14px; font-family: var(--font-display);
+  font-size: 22px; line-height: 1.3; color: #f2f4f6;
+  position: relative; z-index: 1;
+}
+.sc-card-skills {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-bottom: 14px; position: relative; z-index: 1;
+}
+.sc-chip {
+  font-size: 12px; font-weight: 600;
+  border-radius: 999px; padding: 6px 11px;
+}
+.sc-chip.strong { background: rgba(110,196,160,0.18); color: #8fd4b4; }
+.sc-chip.dev { background: rgba(232,168,96,0.14); color: #e8a860; }
+.sc-card-path {
+  font-size: 13.5px; color: #e8eef2; line-height: 1.5;
+  margin-bottom: 16px; position: relative; z-index: 1;
+}
+.sc-arrow { color: rgba(255,255,255,0.35); }
+.sc-card-disc {
+  margin: 0 0 8px; font-size: 11.5px; color: rgba(255,255,255,0.38);
+  line-height: 1.4; position: relative; z-index: 1;
+}
+.sc-card-url {
+  font-size: 12.5px; font-weight: 700; color: #e8a860;
+  position: relative; z-index: 1;
+}
+.sc-hint { margin: 12px 0; }
+.sc-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sc-btn {
+  background: transparent; border: 1px solid var(--line); color: var(--muted);
+  border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 700;
+}
+.sc-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.sc-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.sc-btn.primary:hover:not(:disabled) { filter: brightness(1.05); color: var(--accent-ink); }
+.sc-btn:disabled { opacity: 0.45; cursor: default; }
+.sc-link { margin: 10px 0 0; font-size: 12.5px; word-break: break-all; }
+.sc-link a { color: var(--accent); }
+.sc-msg { margin: 10px 0 0; color: var(--accent-2); font-weight: 600; }
+.pf-share-row { margin: 0 0 18px; }
+.cs-share-row { margin: 0 0 22px; text-align: center; }
+
 /* ===== Footer CTA ===== */
 .cta-band { position: relative; overflow: hidden; border-radius: 32px; padding: 64px 48px; text-align: center; background: linear-gradient(135deg, var(--surface-2), var(--surface)); border: 1px solid var(--line-strong); }
 .cta-band h2 { font-size: clamp(30px, 4vw, 48px); margin-bottom: 16px; }

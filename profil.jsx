@@ -1,4 +1,4 @@
-/* global React, ReactDOM, CP_PROFIL, CPAuth, CPIcon, CPLogo */
+/* global React, ReactDOM, CP_PROFIL, CPAuth, CPIcon, CPLogo, CPShareCardModal */
 const { useState, useEffect } = React;
 
 function statusClass(status) {
@@ -79,6 +79,7 @@ function ProfilPage() {
   const [checkinQ2, setCheckinQ2] = useState("");
   const [checkinChoice, setCheckinChoice] = useState("");
   const [checkinHistoryOpen, setCheckinHistoryOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function loadPlan() {
@@ -368,6 +369,21 @@ function ProfilPage() {
                 <p>{S.draftResumeTitle}</p>
                 <a href="kariyer%20sohbet.html?resume=1">{S.draftResumeLink}</a>
               </div>
+            ) : null}
+
+            <div className="pf-share-row">
+              <button type="button" className="pf-btn" onClick={() => setShareOpen(true)}>
+                {S.shareCardBtn}
+              </button>
+            </div>
+
+            {typeof CPShareCardModal === "function" ? (
+              <CPShareCardModal
+                open={shareOpen}
+                onClose={() => setShareOpen(false)}
+                locale={lang}
+                labels={S.shareCard || {}}
+              />
             ) : null}
 
             <section className="pf-overall">

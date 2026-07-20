@@ -1700,6 +1700,217 @@
     };
   }
 
+  /**
+   * LinkedIn / paylasim ozet karti payload.
+   * opts: { includeName?, locale?, skills? (sohbet anlik) }
+   */
+  async function buildShareCardPayload(opts) {
+    const options = opts || {};
+    const locale = options.locale === "en" ? "en" : "tr";
+    const includeName = !!options.includeName;
+
+    let goal = "";
+    let displayName = "";
+    let steps = [];
+    let skills = [];
+
+    try { goal = (await fetchCareerGoal()) || ""; } catch (e) { goal = ""; }
+
+    if (includeName) {
+      try {
+        const p = await fetchProfile();
+        displayName = (p && p.display_name) ? String(p.display_name).trim() : "";
+      } catch (e) { displayName = ""; }
+    }
+
+    try {
+      const roadmap = await fetchActiveRoadmap();
+      steps = (roadmap || [])
+        .filter((s) => s && s.title)
+        .slice(0, 4)
+        .map((s) => ({
+          order: s.step_order,
+          title: String(s.title).trim().slice(0, 80),
+          status: s.status || "bekliyor",
+        }));
+    } catch (e) { steps = []; }
+
+    if (Array.isArray(options.skills) && options.skills.length) {
+      skills = options.skills.map((sk) => {
+        const name = normalizeYetkinlikAdi(sk.yetkinlik || sk.yetkinlik_adi || "");
+        const puan = Number(sk.puan);
+        const seviye = sk.seviye || "";
+        const strong = seviye === "guclu" || (Number.isFinite(puan) && puan >= 3.5);
+        return {
+          name: name || String(sk.yetkinlik || "").trim(),
+          label: strong
+            ? (locale === "en" ? "Strong signal" : "Güçlü sinyal")
+            : (locale === "en" ? "Developing" : "Geliştiriyorum"),
+          strong: !!strong,
+          sort: strong ? 0 : 1,
+          puan: Number.isFinite(puan) ? puan : null,
+        };
+      }).filter((s) => s.name);
+    } else {
+      try {
+        const snaps = await fetchLastSnapshots(1);
+        if (snaps[0]) {
+          const scores = await fetchScoresForSnapshot(snaps[0].id);
+          skills = (scores || []).map((s) => {
+            const puan = Number(s.puan);
+            const seviye = s.seviye || "";
+            const strong = seviye === "guclu" || (Number.isFinite(puan) && puan >= 3.5);
+            return {
+              name: s.yetkinlik_adi,
+              label: strong
+                ? (locale === "en" ? "Strong signal" : "Güçlü sinyal")
+                : (locale === "en" ? "Developing" : "Geliştiriyorum"),
+              strong: !!strong,
+              sort: strong ? 0 : 1,
+              puan: Number.isFinite(puan) ? puan : null,
+            };
+          });
+        }
+      } catch (e) { skills = []; }
+    }
+
+    skills.sort((a, b) => {
+      if (a.sort !== b.sort) return a.sort - b.sort;
+      const pa = a.puan == null ? 0 : a.puan;
+      const pb = b.puan == null ? 0 : b.puan;
+      return pb - pa;
+    });
+    skills = skills.slice(0, 5).map((s) => ({
+      name: s.name,
+      label: s.label,
+      strong: s.strong,
+    }));
+
+    if (!skills.length && !steps.length && !String(goal || "").trim()) {
+      return { ok: false, empty: true, locale: locale };
+    }
+
+    const disclaimer = locale === "en"
+      ? "Approximate growth signal — not a scientific measurement or hiring guarantee."
+      : "Yaklaşık gelişim sinyali — bilimsel ölçüm veya işe alım garantisi değil.";
+
+    return {
+      ok: true,
+      empty: false,
+      locale: locale,
+      brand: "Career Pick",
+      goal: String(goal || "").trim().slice(0, 160),
+      display_name: includeName ? displayName.slice(0, 60) : "",
+      include_name: includeName,
+      skills: skills,
+      steps: steps,
+      disclaimer: disclaimer,
+      app_url: "https://careerpick.vercel.app",
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  function shareCardLinkedInText(payload) {
+    if (!payload || payload.empty) return "";
+    const locale = payload.locale === "en" ? "en" : "tr";
+    const strong = (payload.skills || []).filter((s) => s.strong).map((s) => s.name);
+    const developing = (payload.skills || []).filter((s) => !s.strong).map((s) => s.name);
+    const skillBits = strong.length ? strong : developing;
+    const path = (payload.steps || []).map((s) => s.title).filter(Boolean);
+    if (locale === "en") {
+      return [
+        "I clarified my career focus with Career Pick.",
+        "",
+        payload.goal ? ("Goal: " + payload.goal) : null,
+        skillBits.length ? ("Signals: " + skillBits.slice(0, 4).join(", ")) : null,
+        path.length ? ("My path: " + path.slice(0, 4).join(" → ")) : null,
+        "",
+        payload.disclaimer || "",
+        payload.app_url || "https://careerpick.vercel.app",
+      ].filter((x) => x !== null).join("\n");
+    }
+    return [
+      "Career Pick ile kariyer odağımı netleştirdim.",
+      "",
+      payload.goal ? ("Hedef: " + payload.goal) : null,
+      skillBits.length ? ("Güçlü / gelişen sinyaller: " + skillBits.slice(0, 4).join(", ")) : null,
+      path.length ? ("Şu anki yolum: " + path.slice(0, 4).join(" → ")) : null,
+      "",
+      payload.disclaimer || "",
+      payload.app_url || "https://careerpick.vercel.app",
+    ].filter((x) => x !== null).join("\n");
+  }
+
+  function randomShareToken() {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let out = "";
+    for (let i = 0; i < 12; i++) {
+      out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+    }
+    return out;
+  }
+
+  async function saveShareCard(payload, { isPublic } = {}) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !payload || payload.empty) return { ok: false, reason: "empty" };
+    const token = randomShareToken();
+    const { data, error } = await c
+      .from("share_cards")
+      .insert({
+        user_id: user.id,
+        public_token: token,
+        payload_json: payload,
+        is_public: isPublic !== false,
+      })
+      .select()
+      .maybeSingle();
+    if (error) {
+      console.warn("[CPAuth] saveShareCard:", error.message);
+      return { ok: false, reason: error.message };
+    }
+    const origin = (typeof location !== "undefined" && location.origin)
+      ? location.origin
+      : "https://careerpick.vercel.app";
+    return {
+      ok: true,
+      card: data,
+      url: origin + "/ozet.html?t=" + encodeURIComponent(token),
+    };
+  }
+
+  async function fetchShareCardByToken(token) {
+    const c = await getClient();
+    if (!c || !token) return null;
+    const { data, error } = await c
+      .from("share_cards")
+      .select("id, public_token, payload_json, is_public, created_at")
+      .eq("public_token", String(token).trim())
+      .eq("is_public", true)
+      .maybeSingle();
+    if (error) {
+      console.warn("[CPAuth] fetchShareCardByToken:", error.message);
+      return null;
+    }
+    return data || null;
+  }
+
+  async function setShareCardPublic(id, isPublic) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !id) return { ok: false };
+    const { error } = await c
+      .from("share_cards")
+      .update({ is_public: !!isPublic })
+      .eq("id", id)
+      .eq("user_id", user.id);
+    if (error) {
+      console.warn("[CPAuth] setShareCardPublic:", error.message);
+      return { ok: false, reason: error.message };
+    }
+    return { ok: true };
+  }
+
   global.CPAuth = {
     init,
     isConfigured: () => configured,
@@ -1763,5 +1974,10 @@
     analyzeJobMatch,
     saveJobMatch,
     fetchLatestJobMatch,
+    buildShareCardPayload,
+    shareCardLinkedInText,
+    saveShareCard,
+    fetchShareCardByToken,
+    setShareCardPublic,
   };
 })(typeof window !== "undefined" ? window : globalThis);
