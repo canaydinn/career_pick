@@ -619,6 +619,85 @@ def match_sector_key(answer_text):
     return "genel"
 
 
+def _egitim_sektor_keywords(sektor_key, sektor_raw="", hedef=""):
+    """Egitim arama / re-rank icin sektor kelimeleri."""
+    kws = []
+    kws.extend(_SEKTOR_SENARYO_KW.get(sektor_key, []))
+    kws.extend(_SECTOR_ALIASES.get(sektor_key, []))
+    for blob in (sektor_raw, hedef):
+        for tok in _normalize_tr_text(blob).split():
+            if len(tok) >= 4:
+                kws.append(tok)
+    seen = set()
+    out = []
+    for kw in kws:
+        k = _normalize_tr_text(kw)
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        out.append(kw)
+    return out
+
+
+def _merge_kurslar(base, ekstra, limit=16):
+    gorulen = {(k.get("ad"), k.get("link")) for k in (base or [])}
+    out = list(base or [])
+    for k in ekstra or []:
+        key = (k.get("ad"), k.get("link"))
+        if key in gorulen:
+            continue
+        if not (k.get("ad") or "").strip():
+            continue
+        out.append(k)
+        gorulen.add(key)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _egitim_rerank(kurslar, keywords, limit=12):
+    """Sektor keyword boost — turizm vb. genel liderlik listesinde kaybolmasin."""
+    if not kurslar:
+        return []
+    kws = [_normalize_tr_text(k) for k in (keywords or []) if k]
+    scored = []
+    for k in kurslar:
+        try:
+            base = float(k.get("score") or 0)
+        except (TypeError, ValueError):
+            base = 0.0
+        metin = _normalize_tr_text(
+            " ".join([
+                str(k.get("ad") or ""),
+                str(k.get("kurum") or ""),
+                str(k.get("kategori") or ""),
+            ])
+        )
+        hits = sum(1 for kw in kws if kw and kw in metin)
+        bonus = min(0.40, hits * 0.09)
+        scored.append((base + bonus, hits, base, k))
+    scored.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+
+    # Sektor eslesenleri one al: once hits>0, sonra kalan
+    with_hit = [x for x in scored if x[1] > 0]
+    without = [x for x in scored if x[1] == 0]
+    ordered = with_hit + without
+
+    out = []
+    seen = set()
+    for _, hits, _, k in ordered:
+        key = (k.get("ad"), k.get("link"))
+        if key in seen:
+            continue
+        seen.add(key)
+        kk = dict(k)
+        kk["sector_hits"] = hits
+        out.append(kk)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _log_recommendation_event(row):
     """Best-effort; oneri yanitini engellemez."""
     base = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
@@ -791,27 +870,55 @@ def oner(cevaplar, a, o, q, session_id=None, user_id=None):
     eksik_terimler = [_yetkinlik_arama_terimi(x) for x in eksikler[:3]]
     eksik_terimler = [t for t in eksik_terimler if t]
     sektor_key = match_sector_key(sektor)
+    sektor_kws = _egitim_sektor_keywords(sektor_key, sektor, hedef)
+    kw_phrase = " ".join(sektor_kws[:7])
 
-    # Kariyer hedefi once; uzun yetkinlik unvanlari aramayi bozmasin
+    # 1) Sektor + hedef agirlikli birincil arama (yetkinlik gurultusu sonda)
     arama = " ".join(
-        p for p in [hedef, sektor, beceriler, " ".join(eksik_terimler[:2]), "egitim sertifika"]
+        p for p in [
+            sektor,
+            hedef,
+            kw_phrase,
+            " ".join(eksik_terimler[:2]),
+            (beceriler or "")[:80],
+            "egitim sertifika",
+        ]
         if p
     ).strip() or "kariyer egitimi"
 
     kurslar = []
     try:
-        kurslar = egitim_ara(arama, o, q, limit=12)
-        # Zayif eslesmede hedef odakli ikinci arama
-        if len(kurslar) < 4 and (hedef or sektor):
-            ekstra = egitim_ara(f"{hedef} {sektor} yoneticilik liderlik isletme", o, q, limit=12)
-            gorulen = {(k.get("ad"), k.get("link")) for k in kurslar}
-            for k in ekstra:
-                key = (k.get("ad"), k.get("link"))
-                if key not in gorulen:
-                    kurslar.append(k)
-                    gorulen.add(key)
-                if len(kurslar) >= 12:
-                    break
+        kurslar = egitim_ara(arama, o, q, limit=16)
+
+        # 2) Saf sektor aramasi — turizm/otel vb. genel listede kaybolmasin
+        if sektor or sektor_key != "genel":
+            sektor_arama = " ".join(
+                p for p in [
+                    sektor or sektor_key,
+                    hedef,
+                    kw_phrase,
+                    "egitim kurs sertifika",
+                ]
+                if p
+            )
+            ekstra = egitim_ara(sektor_arama, o, q, limit=12)
+            kurslar = _merge_kurslar(kurslar, ekstra, limit=20)
+
+        # 3) Hala azsa genel yonetim — re-rank sektor eslesenleri uste cekecek
+        if len(kurslar) < 6 and (hedef or sektor):
+            ekstra2 = egitim_ara(
+                f"{hedef} {sektor} yoneticilik liderlik egitim",
+                o, q, limit=10,
+            )
+            kurslar = _merge_kurslar(kurslar, ekstra2, limit=22)
+
+        kurslar = _egitim_rerank(kurslar, sektor_kws, limit=14)
+        print(
+            "[ONER]",
+            f"sektor_key={sektor_key}",
+            f"kurs={len(kurslar)}",
+            f"sector_hit={sum(1 for k in kurslar if k.get('sector_hits'))}",
+        )
     except Exception as e:
         print("[ERROR] oner egitim_ara:", repr(e))
         kurslar = []
@@ -886,21 +993,30 @@ def oner(cevaplar, a, o, q, session_id=None, user_id=None):
         if eksik_terimler:
             profil_satirlari += f"\n\nONCELIKLI GELISIM ALANLARI: {', '.join(eksik_terimler)}"
 
-    # Skor alanini Claude listesine gonderme (gereksiz gurultu)
+    # Skor / sector_hits alanini Claude listesine gonderme
     kurs_for_claude = [
-        {k: v for k, v in item.items() if k != "score"}
+        {k: v for k, v in item.items() if k not in ("score", "sector_hits")}
         for item in kurslar
     ]
     kurs_json = json.dumps(kurs_for_claude, ensure_ascii=False)
-    sistem = """Sen CareerPick platformunun kariyer danismanisin.
+    sektor_talimat = ""
+    if sektor_key != "genel" or sektor:
+        sektor_talimat = (
+            f"\nKullanicinin hedef sektoru: {sektor or sektor_key}. "
+            "Listede bu sektore (otel/turizm/yazilim vb.) ait egitimler varsa "
+            "oncelikle onlari sec; tum kartlari genel yoneticilik/liderlik ile doldurma. "
+            "Sektor egitimi yoksa o zaman yakin genel egitimlere dus."
+        )
+    sistem = f"""Sen CareerPick platformunun kariyer danismanisin.
 Gorevin: SADECE verilen egitim listesinden en uygun 4-6 egitimi secmek.
-Listede olmayan egitim UYDURMA. Bos liste DONME — birebir turizm/otel egitimi
-olmasa bile yoneticilik, liderlik, isletme, iletisim gibi en yakinlarini sec.
+Listede olmayan egitim UYDURMA. Bos liste DONME.
+{sektor_talimat}
 
-Oncelik: 1) hedef kariyer / sektor  2) eksik yetkinlikleri destekleyen egitimler.
+Oncelik: 1) hedef kariyer / sektor  2) eksik yetkinlikleri destekleyen egitimler
+3) yalniz sektor eslesmesi yoksa yoneticilik / iletisim gibi yakinlar.
 
 Sadece su JSON'u dondur (baska metin yok):
-{"recommendations":[{"ad":"...","kurum":"...","aciklama":"<1-2 cumle>","sure":"<tahmini sure veya bos>","gerekce":"<neden uygun>","link":"..."}]}"""
+{{"recommendations":[{{"ad":"...","kurum":"...","aciklama":"<1-2 cumle>","sure":"<tahmini sure veya bos>","gerekce":"<neden uygun>","link":"..."}}]}}"""
     user = f"KULLANICI PROFILI:\n{profil_satirlari}\n\nEGITIM LISTESI (JSON):\n{kurs_json}"
 
     try:
