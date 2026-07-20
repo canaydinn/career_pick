@@ -1,4 +1,4 @@
-/* global React, ReactDOM, CP_SOHBET, CPAuth, CPShareCardModal */
+/* global React, ReactDOM, CP_SOHBET, CPAuth, CPShareCardModal, CPPaywallModal */
 const { useState: useStateK, useEffect: useEffectK, useRef: useRefK } = React;
 const IcK = window.CPIcon;
 const LogoK = window.CPLogo;
@@ -30,6 +30,8 @@ async function persistResults(recs, skills, cevaplar) {
           link: r.link || "",
           status: "eksik",
           gerekce: r.gerekce || "",
+          session_id: CPAuth.getSessionId(),
+          is_placeholder: !!r.is_placeholder,
         }))
       : [];
     if (trainingsPayload.length) {
@@ -150,10 +152,18 @@ async function apiSenaryolar(cevaplar) {
   return r.json(); // { questions, meslek }
 }
 async function apiOner(cevaplar) {
+  const payload = { action: "recommend", cevaplar };
+  if (window.CPAuth) {
+    try {
+      payload.sessionId = CPAuth.getSessionId();
+      const u = await CPAuth.getUser();
+      if (u && u.id) payload.userId = u.id;
+    } catch (e) { /* ignore */ }
+  }
   const r = await fetch("/api/sohbet", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "recommend", cevaplar }),
+    body: JSON.stringify(payload),
   });
   if (!r.ok) throw new Error("recommend");
   return r.json();
@@ -217,6 +227,10 @@ function KariyerSohbet() {
   const [resumed, setResumed] = useStateK(false);
   const [draftGateDone, setDraftGateDone] = useStateK(false);
   const [shareOpen, setShareOpen] = useStateK(false);
+  const [paywallOpen, setPaywallOpen] = useStateK(false);
+  const [paywallReason, setPaywallReason] = useStateK("free_exhausted");
+  const [usageInfo, setUsageInfo] = useStateK(null);
+  const [quotaNudge, setQuotaNudge] = useStateK(false);
 
   const bodyRef = useRefK(null);
   const taRef = useRefK(null);
@@ -294,6 +308,28 @@ function KariyerSohbet() {
     return () => { alive = false; };
   }, [authReady, authUser]);
 
+  // Kota durumu (banner + yeni tur engeli)
+  useEffectK(() => {
+    if (!authReady || !authUser || !window.CPAuth || pendingDraft) return;
+    let alive = true;
+    (async () => {
+      try {
+        const u = await CPAuth.fetchUsage();
+        if (!alive || !u || !u.ok) return;
+        setUsageInfo(u);
+        // Bos yeni tur + kota yok → paywall (draft yoksa)
+        if (!u.allowed && phase === "asking" && step === 0 && !resumed) {
+          const hasContent = answers.some((a) => String(a || "").trim());
+          if (!hasContent) {
+            setPaywallReason(u.reason || "free_exhausted");
+            setPaywallOpen(true);
+          }
+        }
+      } catch (e) { /* ignore */ }
+    })();
+    return () => { alive = false; };
+  }, [authReady, authUser, pendingDraft, phase]);
+
   // Debounced draft upsert (300–500ms)
   useEffectK(() => {
     if (!draftGateDone || pendingDraft || !authUser || !window.CPAuth) return;
@@ -353,6 +389,20 @@ function KariyerSohbet() {
     }
   }
 
+  async function gateNewTour() {
+    if (!window.CPAuth || !authUser) return true;
+    try {
+      const check = await CPAuth.canStartChat();
+      setUsageInfo(check.raw || check);
+      if (check.allowed) return true;
+      setPaywallReason(check.reason || "free_exhausted");
+      setPaywallOpen(true);
+      return false;
+    } catch (e) {
+      return true;
+    }
+  }
+
   async function onResumeDraft() {
     if (!pendingDraft) return;
     skipDraftSave.current = true;
@@ -363,6 +413,8 @@ function KariyerSohbet() {
   }
 
   async function onAbandonDraft() {
+    const ok = await gateNewTour();
+    if (!ok) return;
     skipDraftSave.current = true;
     if (window.CPAuth) {
       try { await CPAuth.abandonChatDraft(); } catch (e) { /* ignore */ }
@@ -548,6 +600,7 @@ function KariyerSohbet() {
   }
 
   async function runRecommend(finalAnswers, qs) {
+    const sidBefore = window.CPAuth ? CPAuth.getSessionId() : null;
     try {
       const cevaplar = buildCevaplar(finalAnswers, qs || questions);
       const data = await apiOner(cevaplar);
@@ -558,6 +611,20 @@ function KariyerSohbet() {
       const persisted = await persistResults(nextRecs, nextSkills, cevaplar);
       setSkillCompare((persisted && persisted.comparison) || null);
       loadSectorFeatured(cevaplar);
+      // Kota: sonuc basariyla uretildiginde (ayni session ikinci kez sayilmaz)
+      if (window.CPAuth && (nextSkills.length || nextRecs.length)) {
+        try {
+          const rec = await CPAuth.recordChatCompletion(sidBefore);
+          if (rec && rec.ok) {
+            setUsageInfo(rec);
+            if (rec.plan === "free" || (rec.free_chats_used >= (rec.free_limit || 1) && rec.plan !== "plus")) {
+              setQuotaNudge(true);
+            }
+          }
+        } catch (err) {
+          console.warn("[SOHBET] recordChatCompletion:", err.message || err);
+        }
+      }
     } catch (e) {
       console.error("[SOHBET] recommend:", e.message);
       setRecs([]);
@@ -610,6 +677,17 @@ function KariyerSohbet() {
     if (!q || busy || loadingScenarios) return;
     const idx = editingIndex !== null ? editingIndex : step;
     if (idx >= N) return;
+
+    // Yeni tur basinda kota yoksa engelle (draft devaminda veya duzenlemede degil)
+    if (
+      editingIndex === null
+      && step === 0
+      && !(answers[0] && String(answers[0]).trim())
+      && window.CPAuth
+    ) {
+      const ok = await gateNewTour();
+      if (!ok) return;
+    }
 
     setInput("");
     if (taRef.current) taRef.current.style.height = "auto";
@@ -708,6 +786,8 @@ function KariyerSohbet() {
   }
 
   async function restart() {
+    const ok = await gateNewTour();
+    if (!ok) return;
     skipDraftSave.current = true;
     if (window.CPAuth) {
       try { await CPAuth.abandonChatDraft(); } catch (e) { /* ignore */ }
@@ -730,6 +810,8 @@ function KariyerSohbet() {
     setInput("");
     setPendingDraft(null);
     setResumed(false);
+    setQuotaNudge(false);
+    setPaywallOpen(false);
     setTimeout(() => { skipDraftSave.current = false; }, 400);
   }
 
@@ -752,9 +834,18 @@ function KariyerSohbet() {
     : "";
   const A = S.auth || {};
   const D = S.draft || {};
+  const P = S.paywall || {};
   const gateBlocked = !authReady || !authUser;
   const waitingDraftChoice = !!pendingDraft;
   const draftChecking = !!authUser && !draftGateDone;
+  const showFreeBanner = !!(
+    authUser
+    && usageInfo
+    && usageInfo.plan === "free"
+    && (Number(usageInfo.free_chats_used) || 0) < (usageInfo.free_limit || 1)
+    && phase === "asking"
+    && !waitingDraftChoice
+  );
 
   const draftBannerStep = pendingDraft
     ? Math.min((pendingDraft.step || 0) + 1, Math.max(
@@ -829,6 +920,12 @@ function KariyerSohbet() {
                 {D.restart || "Baştan başla"}
               </button>
             </div>
+          </div>
+        ) : null}
+
+        {showFreeBanner ? (
+          <div className="cs-quota-banner" role="status">
+            {P.freeBanner || "Bir ücretsiz sohbet hakkın var."}
           </div>
         ) : null}
 
@@ -920,6 +1017,13 @@ function KariyerSohbet() {
               <h2>{S.result.title}</h2>
               <p>{S.result.sub}</p>
             </div>
+
+            {quotaNudge ? (
+              <div className="cs-quota-nudge" role="status">
+                <p>{P.afterResult || "Profilin kaydedildi. Ekstra tur için Career Pick Plus."}</p>
+                <a className="cs-quota-nudge-link" href="fiyatlandirma.html">{P.cta || "Plus’a geç"}</a>
+              </div>
+            ) : null}
 
             <div className="cs-share-row">
               <button type="button" className="cs-auth-btn" onClick={() => setShareOpen(true)}>
@@ -1103,6 +1207,14 @@ function KariyerSohbet() {
         )}
       </div>
       )}
+      {typeof CPPaywallModal === "function" ? (
+        <CPPaywallModal
+          open={paywallOpen}
+          onClose={() => setPaywallOpen(false)}
+          reason={paywallReason}
+          labels={P}
+        />
+      ) : null}
     </div>
   );
 }

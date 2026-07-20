@@ -152,3 +152,60 @@ APP_BASE_URL=https://careerpick.vercel.app
 
 Cron: her Pazartesi 09:00 UTC → `GET/POST /api/reminders`  
 Kullanıcı profilde **Haftalık e-posta hatırlatması**nı açmadan mail gitmez.
+
+## 6j. Freemium + iyzico (v0.11+)
+
+SQL Editor’da çalıştır:
+
+`migrations/20260720240000_billing_freemium.sql`
+
+- `profiles.plan` (`free` | `plus`), `plan_expires_at`, `iyzico_customer_id`
+- `usage_counters`, `chat_completions`, `subscriptions` + RLS (kullanıcı SELECT)
+
+Vercel env (Dashboard):
+
+```
+IYZICO_API_KEY=...
+IYZICO_SECRET_KEY=...
+IYZICO_BASE_URL=https://sandbox-api.iyzipay.com   # prod: https://api.iyzipay.com
+IYZICO_PLUS_PLAN_REF=...                         # iyzico Pricing Plan referenceCode
+APP_BASE_URL=https://careerpick.vercel.app
+SUPABASE_SERVICE_ROLE_KEY=eyJ...                 # quota/checkout yazmaları
+SUPABASE_URL=...
+SUPABASE_ANON_KEY=...
+```
+
+iyzico panelinde:
+
+1. Ürün + aylık **Pricing Plan** oluştur → `IYZICO_PLUS_PLAN_REF`
+2. Checkout callback: `{APP_BASE_URL}/api/billing/callback`
+3. (Opsiyonel) Merchant webhook: `{APP_BASE_URL}/api/billing/webhook`
+
+Sayfalar: `/fiyatlandirma.html`, profil plan rozeti, sohbet paywall.
+
+Kart bilgisi CareerPick’e gelmez — yalnızca iyzico Checkout Form.
+
+Detay: kök `SETUP.md` (billing özeti) ve `RELEASE_NOTES_v0.11.0.md`.
+
+## 6k. Admin paneli — öneri kalitesi (v0.12+)
+
+SQL Editor’da çalıştır:
+
+`migrations/20260720250000_admin_recommendation_quality.sql`
+
+- `profiles.is_admin` (varsayılan `false`; tetikleyici ile kullanıcı yükseltemez)
+- `recommended_trainings.session_id`, `is_placeholder`
+- `recommendation_events` (sohbet recommend logları)
+
+Admin hesabı açmak (SQL, service role / dashboard):
+
+```sql
+update public.profiles set is_admin = true where email = 'sen@ornek.com';
+```
+
+Sayfa: `/admin.html` (`noindex`) — yalnız `is_admin` kullanıcılar.  
+API: `POST /api/admin/recommendation-quality` (Bearer JWT + sunucu `is_admin` kontrolü).
+
+Env: mevcut `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+

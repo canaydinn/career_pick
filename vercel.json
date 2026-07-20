@@ -12,6 +12,30 @@
       "memory": 512,
       "maxDuration": 60
     },
+    "api/admin/recommendation-quality.js": {
+      "memory": 512,
+      "maxDuration": 60
+    },
+    "api/billing/quota.js": {
+      "memory": 256,
+      "maxDuration": 15
+    },
+    "api/billing/checkout.js": {
+      "memory": 256,
+      "maxDuration": 30
+    },
+    "api/billing/callback.js": {
+      "memory": 256,
+      "maxDuration": 30
+    },
+    "api/billing/cancel.js": {
+      "memory": 256,
+      "maxDuration": 30
+    },
+    "api/billing/webhook.js": {
+      "memory": 256,
+      "maxDuration": 30
+    },
     "api/assessment.py": {
       "memory": 1024,
       "maxDuration": 60

@@ -981,6 +981,211 @@ body[data-layout="stage"] .chat-body { height: 420px; }
 .pf-share-row { margin: 0 0 18px; }
 .cs-share-row { margin: 0 0 22px; text-align: center; }
 
+/* ===== Freemium / paywall ===== */
+.cs-quota-banner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+}
+.cs-quota-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(90, 180, 140, 0.35);
+  background: linear-gradient(145deg, rgba(90, 180, 140, 0.1), rgba(255,255,255,0.02));
+}
+.cs-quota-nudge p { margin: 0; font-size: 14px; color: var(--muted); flex: 1; min-width: 160px; }
+.cs-quota-nudge-link {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+}
+.cs-quota-nudge-link:hover { text-decoration: underline; }
+
+.pw-overlay {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(8, 10, 16, 0.72);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.pw-modal {
+  width: min(420px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 26px 24px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+}
+.pw-modal h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 22px;
+}
+.pw-modal p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+.pw-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.pw-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.pw-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; text-decoration: none; }
+.pw-link { font-size: 13px; color: var(--faint); margin-left: auto; }
+.pw-link:hover { color: var(--accent); }
+
+.pw-plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 0 18px;
+}
+.pw-badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.pw-badge.plus {
+  border-color: rgba(90, 180, 140, 0.5);
+  color: #7dcea0;
+  background: rgba(90, 180, 140, 0.12);
+}
+.pw-badge.free { color: var(--faint); }
+.pw-remaining { font-size: 13px; color: var(--muted); font-weight: 600; }
+.pw-cancel-link, .pw-upgrade-link {
+  font-size: 13px;
+  font-weight: 700;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+.pw-cancel-link:hover, .pw-upgrade-link:hover { text-decoration: underline; }
+.pw-cancel-link:disabled { opacity: 0.5; cursor: default; }
+.pw-billing-msg { font-size: 13px; color: var(--accent-2); margin: -8px 0 16px; }
+.pw-plan-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 22px 20px;
+  margin-bottom: 20px;
+}
+.pw-plan-card h3 { margin: 16px 0 8px; font-family: var(--font-display); font-size: 18px; }
+.pw-plan-card h3:first-child { margin-top: 0; }
+.pw-plan-card ul { margin: 0 0 8px; padding-left: 18px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.pw-price { font-size: 13px; font-weight: 600; color: var(--faint); }
+.pw-form { display: flex; flex-direction: column; gap: 12px; }
+.pw-form label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pw-form input {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 14px;
+}
+.pw-err { color: #e8a860; font-size: 13px; margin: 0; }
+#iyzipay-checkout-form { margin-top: 16px; min-height: 120px; }
+
+/* ===== Admin ===== */
+.adm-page { min-height: 100vh; background: var(--bg); color: var(--text); }
+.adm-top {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 22px; border-bottom: 1px solid var(--line);
+}
+.adm-brand { font-weight: 700; color: var(--accent); text-decoration: none; }
+.adm-title { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.adm-top-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.adm-user { font-size: 13px; color: var(--muted); }
+.adm-main { max-width: 1100px; margin: 0 auto; padding: 24px 18px 64px; }
+.adm-gate {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 32px; text-align: center; max-width: 420px; margin: 40px auto;
+}
+.adm-gate h2 { margin: 0 0 10px; font-family: var(--font-display); }
+.adm-gate p { color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+.adm-btn {
+  background: var(--accent); color: var(--accent-ink); border: none;
+  border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.adm-btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.adm-tabs {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-bottom: 22px; border-bottom: 1px solid var(--line); padding-bottom: 10px;
+}
+.adm-tab {
+  background: transparent; border: 1px solid transparent; color: var(--muted);
+  border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.adm-tab:hover { color: var(--text); }
+.adm-tab.active { border-color: var(--line); color: var(--text); background: rgba(255,255,255,0.04); }
+.adm-tab.soon { opacity: 0.75; }
+.adm-soon-badge {
+  margin-left: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  color: var(--faint); letter-spacing: .04em;
+}
+.adm-panel { min-height: 240px; }
+.adm-soon { padding: 28px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); }
+.adm-soon h2 { margin: 0 0 8px; font-family: var(--font-display); font-size: 20px; color: var(--text); }
+.adm-toolbar { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 20px; }
+.adm-toolbar label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.adm-toolbar select {
+  background: var(--surface); border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 8px 10px;
+}
+.adm-block {
+  margin-bottom: 36px; padding-bottom: 28px; border-bottom: 1px solid var(--line);
+}
+.adm-block h2 { margin: 0 0 6px; font-family: var(--font-display); font-size: 20px; }
+.adm-block h3 { margin: 16px 0 8px; font-size: 14px; }
+.adm-desc { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.adm-stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.adm-stat {
+  min-width: 120px; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface);
+}
+.adm-stat-val { font-size: 22px; font-weight: 800; font-family: var(--font-display); }
+.adm-stat-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.adm-stat-hint { font-size: 11px; color: var(--faint); margin-top: 2px; }
+.adm-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.adm-table th, .adm-table td {
+  text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.adm-table th { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.adm-table tr:last-child td { border-bottom: none; }
+.adm-table code { font-size: 12px; color: var(--accent-2); }
+.adm-list { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
+.adm-muted { color: var(--faint); font-size: 13.5px; }
+.adm-err { color: #e8a860; font-size: 14px; }
+
 /* ===== Footer CTA ===== */
 .cta-band { position: relative; overflow: hidden; border-radius: 32px; padding: 64px 48px; text-align: center; background: linear-gradient(135deg, var(--surface-2), var(--surface)); border: 1px solid var(--line-strong); }
 .cta-band h2 { font-size: clamp(30px, 4vw, 48px); margin-bottom: 16px; }

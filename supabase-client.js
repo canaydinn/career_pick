@@ -244,6 +244,8 @@
       const link = (t.link || t.url || "").trim() || null;
       const source = (t.source === "job_match" ? "job_match" : (t.source || "sohbet"));
       const recommended_at = new Date().toISOString();
+      const session_id = t.session_id || t.sessionId || null;
+      const is_placeholder = !!t.is_placeholder;
 
       const { data: existing } = await c
         .from("recommended_trainings")
@@ -253,9 +255,10 @@
         .maybeSingle();
 
       if (existing) {
-        const patch = { training_name, recommended_at, source };
+        const patch = { training_name, recommended_at, source, is_placeholder };
         if (t.status) patch.status = t.status;
         if (link) patch.link = link;
+        if (session_id) patch.session_id = session_id;
         const { error } = await c
           .from("recommended_trainings")
           .update(patch)
@@ -263,7 +266,7 @@
           .eq("user_id", user.id);
         if (error) console.warn("[CPAuth] saveRecommendations update:", error.message);
       } else {
-        const { error } = await c.from("recommended_trainings").insert({
+        const row = {
           user_id: user.id,
           training_id,
           training_name,
@@ -271,7 +274,10 @@
           link,
           source,
           recommended_at,
-        });
+          is_placeholder,
+        };
+        if (session_id) row.session_id = session_id;
+        const { error } = await c.from("recommended_trainings").insert(row);
         if (error) console.warn("[CPAuth] saveRecommendations insert:", error.message);
       }
     }
@@ -364,6 +370,7 @@
         status: "eksik",
         source: "job_match",
         gerekce: r.gerekce || "",
+        is_placeholder: !!r.is_placeholder,
       })));
     }
     return { ok: true, match: data };
@@ -1911,6 +1918,120 @@
     return { ok: true };
   }
 
+  async function getAccessToken() {
+    const c = await getClient();
+    if (!c) return "";
+    const { data } = await c.auth.getSession();
+    return (data.session && data.session.access_token) || "";
+  }
+
+  async function billingQuota(action, sessionId) {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, reason: "auth", allowed: false, canStart: false };
+    try {
+      const r = await fetch("/api/billing/quota", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify({
+          action: action || "status",
+          sessionId: sessionId || getSessionId(),
+        }),
+      });
+      let data = null;
+      try { data = await r.json(); } catch (e) { data = null; }
+      if (!data) return { ok: false, reason: "bad_response", allowed: false, canStart: false };
+      data.httpStatus = r.status;
+      return data;
+    } catch (e) {
+      console.warn("[CPAuth] billingQuota:", e.message || e);
+      return { ok: false, reason: e.message || "error", allowed: false, canStart: false };
+    }
+  }
+
+  async function fetchPlan() {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return { plan: "free" };
+    const { data } = await c
+      .from("profiles")
+      .select("plan, plan_expires_at")
+      .eq("id", user.id)
+      .maybeSingle();
+    const usage = await billingQuota("status");
+    return {
+      plan: (data && data.plan) || usage.plan || "free",
+      plan_expires_at: data ? data.plan_expires_at : null,
+      usage: usage,
+    };
+  }
+
+  async function fetchUsage() {
+    return billingQuota("status");
+  }
+
+  async function canStartChat() {
+    const data = await billingQuota("can_start");
+    return {
+      ok: !!data.ok,
+      allowed: !!(data.allowed || data.canStart),
+      reason: data.reason || "",
+      plan: data.plan || "free",
+      remaining: data.remaining,
+      free_chats_used: data.free_chats_used,
+      plus_chats_used: data.plus_chats_used,
+      free_limit: data.free_limit,
+      plus_limit: data.plus_limit,
+      raw: data,
+    };
+  }
+
+  async function recordChatCompletion(sessionId) {
+    return billingQuota("record", sessionId || getSessionId());
+  }
+
+  async function createIyzicoCheckout(fields) {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, reason: "auth" };
+    try {
+      const r = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify(fields || {}),
+      });
+      const data = await r.json();
+      if (!r.ok) return { ok: false, ...data };
+      return data;
+    } catch (e) {
+      return { ok: false, reason: e.message || "error" };
+    }
+  }
+
+  async function cancelSubscription() {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, reason: "auth" };
+    try {
+      const r = await fetch("/api/billing/cancel", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await r.json();
+      if (!r.ok) return { ok: false, ...data };
+      return data;
+    } catch (e) {
+      return { ok: false, reason: e.message || "error" };
+    }
+  }
+
   global.CPAuth = {
     init,
     isConfigured: () => configured,
@@ -1979,5 +2100,12 @@
     saveShareCard,
     fetchShareCardByToken,
     setShareCardPublic,
+    getAccessToken,
+    fetchPlan,
+    fetchUsage,
+    canStartChat,
+    recordChatCompletion,
+    createIyzicoCheckout,
+    cancelSubscription,
   };
 })(typeof window !== "undefined" ? window : globalThis);

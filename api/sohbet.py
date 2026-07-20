@@ -239,14 +239,79 @@ def egitim_ara(arama_metni, o, q, limit=8):
     kurslar = []
     for p in res:
         pl = p.payload or {}
+        score = getattr(p, "score", None)
+        try:
+            score = float(score) if score is not None else None
+        except (TypeError, ValueError):
+            score = None
         kurslar.append({
             "ad":       pl.get("kurs_egitim_adi") or pl.get("baslik") or "",
             "kurum":    pl.get("kurum_adi") or "",
             "kategori": pl.get("kategori") or "",
             "sehir":    pl.get("sehir") or "",
             "link":     pl.get("sayfa_linki") or pl.get("link") or "",
+            "score":    score,
         })
     return kurslar
+
+
+_SECTOR_ALIASES = {
+    "turizm": ["turizm", "otel", "hotel", "hospitality", "konaklama", "resort", "misafir"],
+    "yazilim": ["yazilim", "software", "developer", "programlama", "bilisim", "teknoloji", "kodlama", "devops", "frontend", "backend"],
+    "insaat": ["insaat", "construction", "santiye", "muteahhit", "yapi"],
+    "finans": ["finans", "muhasebe", "banka", "finance", "accounting", "maliye", "yatirim"],
+    "saglik": ["saglik", "health", "hastane", "hemsire", "medikal", "klinik", "eczane"],
+}
+
+
+def _normalize_sector_text(text):
+    t = (text or "").strip().lower()
+    for a, b in (("ı", "i"), ("İ", "i"), ("ğ", "g"), ("ü", "u"), ("ş", "s"), ("ö", "o"), ("ç", "c")):
+        t = t.replace(a, b)
+    t = re.sub(r"[^a-z0-9\s]", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def match_sector_key(answer_text):
+    t = _normalize_sector_text(answer_text)
+    if not t:
+        return "genel"
+    for key in ("turizm", "yazilim", "insaat", "finans", "saglik"):
+        if key in t:
+            return key
+        for alias in _SECTOR_ALIASES.get(key, []):
+            if alias in t:
+                return key
+    return "genel"
+
+
+def _log_recommendation_event(row):
+    """Best-effort; oneri yanitini engellemez."""
+    base = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
+    if not base or not key:
+        return
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            base + "/rest/v1/recommendation_events",
+            data=json.dumps(row, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "apikey": key,
+                "Authorization": "Bearer " + key,
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            resp.read()
+    except Exception as e:
+        print("[WARN] recommendation_event:", repr(e))
+
+
+THIN_REC_MAX = 2
+LOW_SCORE_THRESHOLD = 0.35
 
 
 def yetkinlikleri_puanla(senaryolar, a):
@@ -376,7 +441,7 @@ def _json_obj_bul(txt):
     return None
 
 
-def oner(cevaplar, a, o, q):
+def oner(cevaplar, a, o, q, session_id=None, user_id=None):
     profil = [c for c in cevaplar if (c.get("type") or "profile") != "scenario"]
     senaryolar = [c for c in cevaplar if (c.get("type") or "") == "scenario"]
 
@@ -391,6 +456,7 @@ def oner(cevaplar, a, o, q):
     beceriler = _cevap_by_key(cevaplar, "mevcut_yetenekler")
     eksik_terimler = [_yetkinlik_arama_terimi(x) for x in eksikler[:3]]
     eksik_terimler = [t for t in eksik_terimler if t]
+    sektor_key = match_sector_key(sektor)
 
     # Kariyer hedefi once; uzun yetkinlik unvanlari aramayi bozmasin
     arama = " ".join(
@@ -398,21 +464,73 @@ def oner(cevaplar, a, o, q):
         if p
     ).strip() or "kariyer egitimi"
 
-    kurslar = egitim_ara(arama, o, q, limit=12)
-    # Zayif eslesmede hedef odakli ikinci arama
-    if len(kurslar) < 4 and (hedef or sektor):
-        ekstra = egitim_ara(f"{hedef} {sektor} yoneticilik liderlik isletme", o, q, limit=12)
-        gorulen = {(k.get("ad"), k.get("link")) for k in kurslar}
-        for k in ekstra:
-            key = (k.get("ad"), k.get("link"))
-            if key not in gorulen:
-                kurslar.append(k)
-                gorulen.add(key)
-            if len(kurslar) >= 12:
-                break
+    kurslar = []
+    try:
+        kurslar = egitim_ara(arama, o, q, limit=12)
+        # Zayif eslesmede hedef odakli ikinci arama
+        if len(kurslar) < 4 and (hedef or sektor):
+            ekstra = egitim_ara(f"{hedef} {sektor} yoneticilik liderlik isletme", o, q, limit=12)
+            gorulen = {(k.get("ad"), k.get("link")) for k in kurslar}
+            for k in ekstra:
+                key = (k.get("ad"), k.get("link"))
+                if key not in gorulen:
+                    kurslar.append(k)
+                    gorulen.add(key)
+                if len(kurslar) >= 12:
+                    break
+    except Exception as e:
+        print("[ERROR] oner egitim_ara:", repr(e))
+        kurslar = []
+
+    def _emit(recs, outcome_hint=None):
+        usable = [k for k in kurslar if (k.get("ad") or "").strip()]
+        hit = len(usable)
+        scores = [k.get("score") for k in usable if k.get("score") is not None]
+        top = max(scores) if scores else None
+        n = len(recs or [])
+        if outcome_hint:
+            outcome = outcome_hint
+        elif hit == 0 or n == 0:
+            outcome = "empty_qdrant"
+        elif n <= THIN_REC_MAX:
+            outcome = "thin"
+        elif top is not None and top < LOW_SCORE_THRESHOLD:
+            outcome = "low_score"
+        else:
+            outcome = "ok"
+        sid = None
+        if session_id:
+            try:
+                sid = str(session_id).strip() or None
+            except Exception:
+                sid = None
+        uid = None
+        if user_id:
+            try:
+                uid = str(user_id).strip() or None
+            except Exception:
+                uid = None
+        _log_recommendation_event({
+            "source": "sohbet",
+            "user_id": uid,
+            "session_id": sid,
+            "sektor_raw": (sektor or "")[:200] or None,
+            "hedef_raw": (hedef or "")[:200] or None,
+            "sektor_key": sektor_key,
+            "search_query": (arama or "")[:500] or None,
+            "qdrant_hit_count": hit,
+            "top_score": top,
+            "final_rec_count": n,
+            "outcome": outcome,
+            "meta": {
+                "thin_max": THIN_REC_MAX,
+                "low_score_threshold": LOW_SCORE_THRESHOLD,
+            },
+        })
+        return recs, yetkinlikler
 
     if not kurslar:
-        return [], yetkinlikler
+        return _emit([], "empty_qdrant")
 
     fallback = _kurslari_kartlara(
         kurslar,
@@ -434,7 +552,12 @@ def oner(cevaplar, a, o, q):
         if eksik_terimler:
             profil_satirlari += f"\n\nONCELIKLI GELISIM ALANLARI: {', '.join(eksik_terimler)}"
 
-    kurs_json = json.dumps(kurslar, ensure_ascii=False)
+    # Skor alanini Claude listesine gonderme (gereksiz gurultu)
+    kurs_for_claude = [
+        {k: v for k, v in item.items() if k != "score"}
+        for item in kurslar
+    ]
+    kurs_json = json.dumps(kurs_for_claude, ensure_ascii=False)
     sistem = """Sen CareerPick platformunun kariyer danismanisin.
 Gorevin: SADECE verilen egitim listesinden en uygun 4-6 egitimi secmek.
 Listede olmayan egitim UYDURMA. Bos liste DONME — birebir turizm/otel egitimi
@@ -472,12 +595,12 @@ Sadece su JSON'u dondur (baska metin yok):
                         "link": (item.get("link") or "").strip(),
                     })
                 if temiz:
-                    return temiz, yetkinlikler
+                    return _emit(temiz)
     except Exception as e:
         print("[ERROR] oner claude:", repr(e))
 
     # Claude bos/kirpik donerse RAG sonuclarini kart olarak goster
-    return fallback, yetkinlikler
+    return _emit(fallback)
 
 
 # ── Yol haritasi ───────────────────────────────────────────────────────────────
@@ -1029,7 +1152,13 @@ class handler(BaseHTTPRequestHandler):
                     return self._json(400, {"error": "Cevaplar eksik."})
                 cevaplar = _normalize_cevaplar(cevaplar)
                 a, o, q = _clients()
-                recs, yetkinlikler = oner(cevaplar, a, o, q)
+                session_id = data.get("sessionId") or data.get("session_id")
+                user_id = data.get("userId") or data.get("user_id")
+                recs, yetkinlikler = oner(
+                    cevaplar, a, o, q,
+                    session_id=session_id,
+                    user_id=user_id,
+                )
                 return self._json(200, {
                     "recommendations": recs,
                     "yetkinlikler": yetkinlikler,

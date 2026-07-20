@@ -405,6 +405,7 @@ def recommend_for_gaps(gaps, job_title, a, o, q):
             "sure": "",
             "gerekce": f"İlandaki boşluk: {g}",
             "link": "",
+            "is_placeholder": True,
         } for g in gaps[:4]]
 
     kurs_json = json.dumps(kurslar[:12], ensure_ascii=False)
