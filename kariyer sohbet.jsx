@@ -201,6 +201,8 @@ function KariyerSohbet() {
 
   const [scenarioQs, setScenarioQs] = useStateK([]); // RAG'den gelen senaryolar
   const [scenariosReady, setScenariosReady] = useStateK(false);
+  const [matchedMeslek, setMatchedMeslek] = useStateK("");
+  const [scenarioMatchQuality, setScenarioMatchQuality] = useStateK("");
   const [loadingScenarios, setLoadingScenarios] = useStateK(false);
 
   const questions = S.questions.concat(scenarioQs);
@@ -435,6 +437,8 @@ function KariyerSohbet() {
     setScenarioQs([]);
     setScenariosReady(false);
     setLoadingScenarios(false);
+    setMatchedMeslek("");
+    setScenarioMatchQuality("");
     setPhase("asking");
     setInput("");
     setTimeout(() => { skipDraftSave.current = false; }, 400);
@@ -540,11 +544,15 @@ function KariyerSohbet() {
       const qs = Array.isArray(data.questions) ? data.questions : [];
       setScenarioQs(qs);
       setScenariosReady(true);
+      setMatchedMeslek((data && data.meslek) || "");
+      setScenarioMatchQuality((data && data.match_quality) || "");
       return qs;
     } catch (e) {
       console.error("[SOHBET] scenarios:", e.message);
       setScenarioQs([]);
       setScenariosReady(true);
+      setMatchedMeslek("");
+      setScenarioMatchQuality("");
       return [];
     } finally {
       setLoadingScenarios(false);
@@ -806,6 +814,8 @@ function KariyerSohbet() {
     setScenarioQs([]);
     setScenariosReady(false);
     setLoadingScenarios(false);
+    setMatchedMeslek("");
+    setScenarioMatchQuality("");
     setPhase("asking");
     setInput("");
     setPendingDraft(null);
@@ -943,6 +953,11 @@ function KariyerSohbet() {
             {S.headerTitle}
             {resumed && !waitingDraftChoice ? (
               <span className="cs-resumed-chip">{D.resumedChip || ""}</span>
+            ) : null}
+            {matchedMeslek && scenariosReady && phase === "asking" ? (
+              <span className="cs-meslek-chip" title={scenarioMatchQuality || ""}>
+                {matchedMeslek}
+              </span>
             ) : null}
           </div>
           <div className="cs-progress">{displayProgress}</div>

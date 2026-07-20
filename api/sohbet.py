@@ -124,6 +124,37 @@ Sadece JSON:
 
 # ── RAG senaryolar ─────────────────────────────────────────────────────────────
 
+SENARYO_OVERFETCH = 30
+SENARYO_MESLEK_CANDIDATES = 3
+# Vektor skoru altinda cascade'e dus (koleksiyona gore yaklasik)
+SENARYO_MIN_TOP_SCORE = 0.28
+
+# Sektor / meslek keyword boost (payload'da meslek alani olmadigi icin metin uzerinden)
+_SEKTOR_SENARYO_KW = {
+    "turizm": [
+        "otel", "turizm", "misafir", "konaklama", "resepsiyon", "resort",
+        "hospitality", "f&b", "vardiya", "check-in", "oda", "front office",
+        "housekeeping", "mutfak", "restoran", "seyahat",
+    ],
+    "yazilim": [
+        "yazilim", "kod", "developer", "yazılım", "api", "deploy", "sprint",
+        "pull request", "backend", "frontend", "devops", "bug", "release",
+    ],
+    "insaat": [
+        "insaat", "şantiye", "santiye", "proje müdürü", "muteahhit", "yapi",
+        "şef", "imar", "beton", "iş güvenliği",
+    ],
+    "finans": [
+        "finans", "muhasebe", "bütçe", "butce", "kredi", "yatırım", "bilanço",
+        "banka", "risk", "denetim", "mali",
+    ],
+    "saglik": [
+        "saglik", "hasta", "klinik", "hastane", "hemsire", "tedavi", "poliklinik",
+        "ameliyat", "eczane", "medikal",
+    ],
+}
+
+
 def _yetkinlik_nolarini_cikar(yetkinlik_kodlari):
     nolar = set()
     for kod in yetkinlik_kodlari or []:
@@ -133,55 +164,68 @@ def _yetkinlik_nolarini_cikar(yetkinlik_kodlari):
     return sorted(nolar)
 
 
-def _meslek_profili_getir(arama, o, q):
-    if not arama.strip():
-        return None
-    res = q.query_points(
-        collection_name=CAREER_COLLECTION,
-        query=_embed(arama, o),
-        query_filter=Filter(must=[
-            FieldCondition(key="chunk_type", match=MatchValue(value="meslek_profili"))
-        ]),
-        limit=1,
-        with_payload=True,
-    )
-    if not res.points:
-        return None
-    pl = res.points[0].payload or {}
-    return {
-        "meslek_adi": pl.get("meslek_adi", ""),
-        "yetkinlik_kodlari": pl.get("yetkinlik_kodlari", []),
-    }
+def _yetkinlik_adlarini_cikar(yetkinlik_kodlari):
+    """'12-Liderlik' -> 'Liderlik'."""
+    adlar = []
+    for kod in yetkinlik_kodlari or []:
+        s = str(kod).strip()
+        m = re.match(r"\d+-(.+)$", s)
+        if m:
+            ad = m.group(1).strip()
+            if ad:
+                adlar.append(ad)
+        elif s and not s.isdigit():
+            adlar.append(s)
+    return adlar[:8]
 
 
-def _meta_senaryo_getir(yetkinlik_nolari, arama_baglam, o, q, adet=SENARYO_ADETI):
-    if yetkinlik_nolari:
-        sorgu = f"yetkinlik degerlendirme {' '.join(str(n) for n in yetkinlik_nolari[:8])} {arama_baglam}"
-    else:
-        sorgu = arama_baglam or "is yeri yetkinlik senaryosu"
-    res = q.query_points(
-        collection_name=CAREER_COLLECTION,
-        query=_embed(sorgu, o),
-        query_filter=Filter(must=[
-            FieldCondition(key="chunk_type", match=MatchValue(value="meta_senaryo"))
-        ]),
-        limit=adet + 8,
-        with_payload=True,
-    )
-    gorulen = set()
-    out = []
-    for p in res.points:
-        pl = p.payload or {}
-        sno = pl.get("senaryo_no")
-        if sno in gorulen:
-            continue
-        if not (pl.get("senaryo_metni") or "").strip():
-            continue
-        gorulen.add(sno)
-        out.append(pl)
-        if len(out) >= adet:
-            break
+def _cevap_map(cevaplar):
+    out = {}
+    for c in cevaplar or []:
+        key = (c.get("key") or "").strip()
+        cevap = (c.get("cevap") or "").strip()
+        if key and cevap:
+            out[key] = cevap
     return out
+
+
+def _normalize_tr_text(text):
+    t = (text or "").strip().lower()
+    for a, b in (
+        ("ı", "i"), ("İ", "i"), ("i̇", "i"),
+        ("ğ", "g"), ("ü", "u"), ("ş", "s"), ("ö", "o"), ("ç", "c"),
+    ):
+        t = t.replace(a, b)
+    t = re.sub(r"[^a-z0-9\s]", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _token_overlap_score(a, b):
+    ta = set(_normalize_tr_text(a).split())
+    tb = set(_normalize_tr_text(b).split())
+    if not ta or not tb:
+        return 0.0
+    # kisa hedeflerde (otel muduru) tek kelime eslesmesi de degerli
+    inter = ta & tb
+    if not inter:
+        # alt dize: "otel" in "otel muduru adayi"
+        na, nb = _normalize_tr_text(a), _normalize_tr_text(b)
+        if na and nb and (na in nb or nb in na):
+            return 0.55
+        return 0.0
+    return len(inter) / max(len(ta), 1)
+
+
+def _meslek_arama_metni(cevaplar):
+    """Meslek hop: once kariyer_hedefi + hedef_sektor (gurultusuz)."""
+    m = _cevap_map(cevaplar)
+    hedef = m.get("kariyer_hedefi", "")
+    sektor = m.get("hedef_sektor", "")
+    parts = [p for p in (hedef, sektor) if p]
+    if parts:
+        return " ".join(parts).strip()
+    # Fallback: eski genis baglam
+    return _profil_baglami(cevaplar)
 
 
 def _profil_baglami(cevaplar):
@@ -198,12 +242,302 @@ def _profil_baglami(cevaplar):
     return " ".join(parcalar).strip()
 
 
+def _meslek_profili_adaylari(arama, o, q, limit=SENARYO_MESLEK_CANDIDATES):
+    if not (arama or "").strip():
+        return []
+    res = q.query_points(
+        collection_name=CAREER_COLLECTION,
+        query=_embed(arama, o),
+        query_filter=Filter(must=[
+            FieldCondition(key="chunk_type", match=MatchValue(value="meslek_profili"))
+        ]),
+        limit=limit,
+        with_payload=True,
+    )
+    out = []
+    for p in (res.points or []):
+        pl = p.payload or {}
+        score = getattr(p, "score", None)
+        try:
+            score = float(score) if score is not None else 0.0
+        except (TypeError, ValueError):
+            score = 0.0
+        out.append({
+            "meslek_adi": pl.get("meslek_adi", "") or "",
+            "yetkinlik_kodlari": pl.get("yetkinlik_kodlari", []) or [],
+            "vector_score": score,
+        })
+    return out
+
+
+def _meslek_profili_sec(adaylar, cevaplar):
+    """Top-N icinden hedef/sektor ile en uyumlu meslek_adi'ni sec."""
+    if not adaylar:
+        return None
+    m = _cevap_map(cevaplar)
+    hedef = m.get("kariyer_hedefi", "")
+    sektor = m.get("hedef_sektor", "")
+    best = None
+    best_score = -1.0
+    for a in adaylar:
+        meslek = a.get("meslek_adi") or ""
+        overlap = (
+            _token_overlap_score(hedef, meslek) * 1.4
+            + _token_overlap_score(sektor, meslek) * 0.8
+            + float(a.get("vector_score") or 0) * 0.35
+        )
+        if overlap > best_score:
+            best_score = overlap
+            best = a
+    return best or adaylar[0]
+
+
+def _meslek_profili_getir(arama, o, q):
+    """Geriye uyumluluk: tek sonuc."""
+    adaylar = _meslek_profili_adaylari(arama, o, q, limit=1)
+    return adaylar[0] if adaylar else None
+
+
+def _sektor_keywords_for(cevaplar, meslek_adi=""):
+    m = _cevap_map(cevaplar)
+    sektor = m.get("hedef_sektor", "")
+    key = match_sector_key(sektor) if sektor else "genel"
+    kws = list(_SEKTOR_SENARYO_KW.get(key, []))
+    # Meslek / hedeften ekstra tokenlar
+    for blob in (meslek_adi, m.get("kariyer_hedefi", ""), sektor):
+        for tok in _normalize_tr_text(blob).split():
+            if len(tok) >= 4 and tok not in kws:
+                kws.append(tok)
+    return key, kws
+
+
+def _senaryo_rerank_score(point, nolar_set, keywords):
+    pl = point.payload or {}
+    try:
+        base = float(getattr(point, "score", 0) or 0)
+    except (TypeError, ValueError):
+        base = 0.0
+    bonus = 0.0
+    ano = pl.get("ana_yetkinlik_no")
+    try:
+        ano_i = int(ano) if ano is not None and str(ano).strip() != "" else None
+    except (TypeError, ValueError):
+        ano_i = None
+    if ano_i is not None and ano_i in nolar_set:
+        bonus += 0.22
+    metin = _normalize_tr_text(
+        " ".join([
+            str(pl.get("senaryo_metni") or ""),
+            str(pl.get("ana_yetkinlik_adi") or ""),
+            str(pl.get("text") or ""),
+        ])
+    )
+    hits = 0
+    for kw in keywords or []:
+        k = _normalize_tr_text(kw)
+        if k and k in metin:
+            hits += 1
+    bonus += min(0.28, hits * 0.07)
+    return base + bonus, base, hits, ano_i
+
+
+def _meta_senaryo_ara(sorgu, o, q, limit=SENARYO_OVERFETCH):
+    res = q.query_points(
+        collection_name=CAREER_COLLECTION,
+        query=_embed(sorgu, o),
+        query_filter=Filter(must=[
+            FieldCondition(key="chunk_type", match=MatchValue(value="meta_senaryo"))
+        ]),
+        limit=limit,
+        with_payload=True,
+    )
+    return list(res.points or [])
+
+
+def _meta_senaryo_sec(points, nolar, keywords, adet=SENARYO_ADETI):
+    """Over-fetch listesini yetkinlik + keyword ile yeniden sirala; cesitlilik."""
+    nolar_set = set(nolar or [])
+    scored = []
+    for p in points or []:
+        pl = p.payload or {}
+        sno = pl.get("senaryo_no")
+        if not (pl.get("senaryo_metni") or "").strip():
+            continue
+        total, base, kw_hits, ano_i = _senaryo_rerank_score(p, nolar_set, keywords)
+        scored.append({
+            "payload": pl,
+            "sno": sno,
+            "total": total,
+            "base": base,
+            "kw_hits": kw_hits,
+            "ano": ano_i,
+        })
+    scored.sort(key=lambda x: x["total"], reverse=True)
+
+    gorulen_sno = set()
+    yetkinlik_say = {}
+    out = []
+    for item in scored:
+        sno = item["sno"]
+        if sno in gorulen_sno:
+            continue
+        ano = item["ano"]
+        if ano is not None and yetkinlik_say.get(ano, 0) >= 1:
+            # ayni birincil yetkinlikten ikinciyi ancak liste dolmazsa al
+            continue
+        gorulen_sno.add(sno)
+        if ano is not None:
+            yetkinlik_say[ano] = yetkinlik_say.get(ano, 0) + 1
+        out.append(item)
+        if len(out) >= adet:
+            break
+
+    # Cesitlilik yuzunden eksik kaldysa ayni yetkinlige izin vererek tamamla
+    if len(out) < adet:
+        for item in scored:
+            sno = item["sno"]
+            if sno in gorulen_sno:
+                continue
+            gorulen_sno.add(sno)
+            out.append(item)
+            if len(out) >= adet:
+                break
+
+    return out
+
+
+def _meta_senaryo_getir(yetkinlik_nolari, arama_baglam, o, q, adet=SENARYO_ADETI):
+    """Eski imza — basit yol (test / geri uyum)."""
+    if yetkinlik_nolari:
+        sorgu = f"yetkinlik degerlendirme {' '.join(str(n) for n in yetkinlik_nolari[:8])} {arama_baglam}"
+    else:
+        sorgu = arama_baglam or "is yeri yetkinlik senaryosu"
+    points = _meta_senaryo_ara(sorgu, o, q, limit=adet + 8)
+    selected = _meta_senaryo_sec(points, yetkinlik_nolari, [], adet=adet)
+    return [s["payload"] for s in selected]
+
+
+def _build_senaryo_sorgulari(meslek_adi, sektor, yetkinlik_adlari, nolar, baglam):
+    """Oncelikli cascade sorgulari."""
+    adlar = " ".join(yetkinlik_adlari[:6])
+    nolar_txt = " ".join(str(n) for n in (nolar or [])[:8])
+    meslek = (meslek_adi or "").strip()
+    sektor = (sektor or "").strip()
+    baglam = (baglam or "").strip()
+
+    q1 = " ".join(
+        p for p in [meslek, sektor, adlar, "is yeri yetkinlik senaryosu"]
+        if p
+    ).strip()
+    q2 = " ".join(
+        p for p in [meslek, adlar, nolar_txt, "yetkinlik degerlendirme senaryo"]
+        if p
+    ).strip()
+    q3 = " ".join(
+        p for p in [
+            f"yetkinlik degerlendirme {nolar_txt}" if nolar_txt else "",
+            baglam or "is yeri yetkinlik senaryosu",
+        ]
+        if p
+    ).strip()
+    # Tekrarlari at
+    seen = set()
+    out = []
+    for label, q in (("meslek_biased", q1), ("yetkinlik", q2), ("legacy", q3)):
+        key = _normalize_tr_text(q)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append((label, q))
+    if not out:
+        out.append(("legacy", "is yeri yetkinlik senaryosu"))
+    return out
+
+
 def senaryolari_hazirla(cevaplar, o, q):
-    """Profil yanitlarina gore RAG'den senaryo sorulari uretir."""
-    baglam = _profil_baglami(cevaplar)
-    profil = _meslek_profili_getir(baglam, o, q)
+    """Profil yanitlarina gore RAG'den senaryo sorulari uretir (meslek-sikilasmis)."""
+    m = _cevap_map(cevaplar)
+    hedef = m.get("kariyer_hedefi", "")
+    sektor = m.get("hedef_sektor", "")
+    baglam_genis = _profil_baglami(cevaplar)
+    meslek_arama = _meslek_arama_metni(cevaplar)
+
+    adaylar = _meslek_profili_adaylari(meslek_arama, o, q, limit=SENARYO_MESLEK_CANDIDATES)
+    profil = _meslek_profili_sec(adaylar, cevaplar)
     nolar = _yetkinlik_nolarini_cikar(profil.get("yetkinlik_kodlari", [])) if profil else []
-    raw = _meta_senaryo_getir(nolar, baglam, o, q, adet=SENARYO_ADETI)
+    yetkinlik_adlari = _yetkinlik_adlarini_cikar(profil.get("yetkinlik_kodlari", [])) if profil else []
+    meslek_adi = (profil or {}).get("meslek_adi", "") or ""
+    sektor_key, keywords = _sektor_keywords_for(cevaplar, meslek_adi)
+
+    sorgular = _build_senaryo_sorgulari(
+        meslek_adi, sektor, yetkinlik_adlari, nolar, baglam_genis
+    )
+
+    selected = []
+    used_variant = "legacy"
+    fallback = True
+    top_base = 0.0
+    kw_total = 0
+
+    for label, sorgu in sorgular:
+        try:
+            points = _meta_senaryo_ara(sorgu, o, q, limit=SENARYO_OVERFETCH)
+        except Exception as e:
+            print("[ERROR] meta_senaryo_ara:", repr(e))
+            points = []
+        cand = _meta_senaryo_sec(points, nolar, keywords, adet=SENARYO_ADETI)
+        if not cand:
+            continue
+        top_base = max((c["base"] for c in cand), default=0.0)
+        kw_total = sum(c["kw_hits"] for c in cand)
+        nolar_set = set(nolar or [])
+        yetkinlik_hit = sum(1 for c in cand if c["ano"] is not None and c["ano"] in nolar_set)
+
+        # Kalite: meslek/yetkinlik basamaklarinda esik veya keyword/yetkinlik kaniti iste
+        strong = (
+            label == "legacy"
+            or top_base >= SENARYO_MIN_TOP_SCORE
+            or kw_total >= 2
+            or yetkinlik_hit >= 3
+        )
+        selected = cand
+        used_variant = label
+        fallback = label == "legacy" or not strong
+        if strong and label != "legacy":
+            fallback = False
+            break
+        # Zayifsa bir sonraki cascade'e devam; son secimi elde tut
+        if label != "legacy":
+            continue
+        break
+
+    raw = [s["payload"] for s in selected]
+
+    # match_quality ozeti
+    nolar_set = set(nolar or [])
+    overlap = 0
+    for s in selected:
+        if s["ano"] is not None and s["ano"] in nolar_set:
+            overlap += 1
+    if not selected:
+        match_quality = "empty"
+        fallback = True
+    elif fallback:
+        match_quality = "weak"
+    elif kw_total >= 2 or overlap >= 3:
+        match_quality = "strong"
+    else:
+        match_quality = "ok"
+
+    print(
+        "[SENARYO]",
+        f"meslek={meslek_adi!r}",
+        f"variant={used_variant}",
+        f"quality={match_quality}",
+        f"nolar={nolar[:6]}",
+        f"top_base={top_base:.3f}",
+        f"kw={kw_total}",
+    )
 
     sorular = []
     for i, s in enumerate(raw):
@@ -226,7 +560,11 @@ def senaryolari_hazirla(cevaplar, o, q):
         })
     return {
         "questions": sorular,
-        "meslek": (profil or {}).get("meslek_adi", ""),
+        "meslek": meslek_adi,
+        "match_quality": match_quality,
+        "fallback": fallback,
+        "sektor_key": sektor_key,
+        "query_variant": used_variant,
     }
 
 
@@ -265,11 +603,7 @@ _SECTOR_ALIASES = {
 
 
 def _normalize_sector_text(text):
-    t = (text or "").strip().lower()
-    for a, b in (("ı", "i"), ("İ", "i"), ("ğ", "g"), ("ü", "u"), ("ş", "s"), ("ö", "o"), ("ç", "c")):
-        t = t.replace(a, b)
-    t = re.sub(r"[^a-z0-9\s]", " ", t)
-    return re.sub(r"\s+", " ", t).strip()
+    return _normalize_tr_text(text)
 
 
 def match_sector_key(answer_text):
