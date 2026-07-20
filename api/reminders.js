@@ -218,6 +218,19 @@ export default async function handler(req, res) {
 
     const pendingMicro = micros || [];
 
+    let hasCheckin = false;
+    try {
+      const { data: checkinRow, error: checkinErr } = await supabase
+        .from("weekly_checkins")
+        .select("id")
+        .eq("user_id", profile.id)
+        .eq("week_start", weekStart)
+        .maybeSingle();
+      if (!checkinErr) hasCheckin = !!(checkinRow && checkinRow.id);
+    } catch (e) {
+      hasCheckin = false;
+    }
+
     const continueItems = list.filter(
       (t) =>
         t.status === "devam_ediyor" &&
@@ -232,7 +245,8 @@ export default async function handler(req, res) {
     );
     const nextUp = list.find((t) => t.status !== "tamamlandi");
 
-    if (!continueItems.length && !startItems.length && !pendingMicro.length) {
+    // Check-in bekliyorsa egitim/pratik bos olsa da mail gonder
+    if (!continueItems.length && !startItems.length && !pendingMicro.length && hasCheckin) {
       skipped++;
       continue;
     }
@@ -268,9 +282,17 @@ export default async function handler(req, res) {
     if (nextUp) {
       lines.push(`<p>Sıradaki önerin: <em>${escapeHtml(nextUp.training_name)}</em></p>`);
     }
+    if (!hasCheckin) {
+      lines.push(
+        `<p><strong>Bu hafta ne ilerledin?</strong> ` +
+          `<a href="${base}/profil.html#check-in">Check-in’i tamamla →</a></p>`
+      );
+    }
     lines.push(`<p><a href="${base}/profil.html">Profiline git →</a></p>`);
 
-    const subject = pendingMicro.length
+    const subject = !hasCheckin
+      ? "Career Pick — bu hafta ne ilerledin?"
+      : pendingMicro.length
       ? "Career Pick — bu haftanın pratikleri"
       : activeStep
         ? `Career Pick — yol haritanın ${activeStep.step_order}. adımı`

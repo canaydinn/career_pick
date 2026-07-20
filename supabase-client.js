@@ -1348,6 +1348,188 @@
     return list.length > 0;
   }
 
+  var CHECKIN_CHOICES = ["egitim", "pratik", "basvuru", "belirsiz"];
+
+  function checkinTemplateReflection(q2Choice, q2Text) {
+    const choiceLabels = {
+      egitim: "eğitim",
+      pratik: "pratik",
+      basvuru: "başvuru",
+      belirsiz: "netleşecek bir odak",
+    };
+    let focus = "";
+    if (q2Choice && choiceLabels[q2Choice]) focus = choiceLabels[q2Choice];
+    else if (q2Text && String(q2Text).trim()) focus = String(q2Text).trim().slice(0, 80);
+    if (focus) {
+      return "Notunu aldık — gelecek hafta odağın: " + focus + ". Küçük bir adım yeterli.";
+    }
+    return "Notunu aldık — gelecek hafta odağın öncelik. Küçük bir adım yeterli.";
+  }
+
+  async function fetchWeekCheckin(weekStart) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return null;
+    const ws = weekStart || currentWeekStart();
+    const { data, error } = await c
+      .from("weekly_checkins")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("week_start", ws)
+      .maybeSingle();
+    if (error) {
+      console.warn("[CPAuth] fetchWeekCheckin:", error.message);
+      return null;
+    }
+    return data || null;
+  }
+
+  async function fetchCheckinHistory(limit) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return [];
+    const lim = Math.min(Math.max(Number(limit) || 6, 1), 8);
+    const { data, error } = await c
+      .from("weekly_checkins")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("week_start", { ascending: false })
+      .limit(lim);
+    if (error) {
+      console.warn("[CPAuth] fetchCheckinHistory:", error.message);
+      return [];
+    }
+    return data || [];
+  }
+
+  /**
+   * Opsiyonel Claude yansima; basarisizsa sablon.
+   * payload: { q1, q2, q2_choice, goal }
+   */
+  async function reflectCheckin(payload) {
+    const q1 = String((payload && payload.q1) || "").trim();
+    const q2 = String((payload && payload.q2) || "").trim();
+    const choice = (payload && payload.q2_choice) || null;
+    const fallback = checkinTemplateReflection(choice, q2);
+    if (!q1) return fallback;
+    try {
+      const r = await fetch("/api/sohbet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "checkin_reflect",
+          q1: q1.slice(0, 800),
+          q2: q2.slice(0, 400),
+          q2_choice: choice || "",
+          hedef: String((payload && payload.goal) || "").slice(0, 300),
+        }),
+      });
+      if (!r.ok) return fallback;
+      const data = await r.json();
+      const line = (data && data.reflection) ? String(data.reflection).trim() : "";
+      return line ? line.slice(0, 220) : fallback;
+    } catch (e) {
+      console.warn("[CPAuth] reflectCheckin:", e.message || e);
+      return fallback;
+    }
+  }
+
+  /**
+   * Haftalik check-in upsert (user_id + week_start).
+   * opts: { q1, q2, q2_choice, source, weekStart, reflect, goal }
+   */
+  async function saveWeekCheckin(opts) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !opts) return { ok: false, reason: "auth_or_empty" };
+
+    const q1 = String(opts.q1 || "").trim().slice(0, 1000);
+    if (!q1) return { ok: false, reason: "q1_required" };
+
+    const q2 = String(opts.q2 || "").trim().slice(0, 500) || null;
+    let choice = opts.q2_choice || null;
+    if (choice && CHECKIN_CHOICES.indexOf(choice) === -1) choice = null;
+    const ws = opts.weekStart || currentWeekStart();
+    const source = opts.source === "email_link" ? "email_link" : "profile";
+
+    let reflection = null;
+    if (opts.reflect !== false) {
+      reflection = await reflectCheckin({
+        q1: q1,
+        q2: q2 || "",
+        q2_choice: choice,
+        goal: opts.goal || "",
+      });
+    } else if (opts.reflection) {
+      reflection = String(opts.reflection).trim().slice(0, 220);
+    } else {
+      reflection = checkinTemplateReflection(choice, q2);
+    }
+
+    const payload = {
+      user_id: user.id,
+      week_start: ws,
+      q1_text: q1,
+      q2_text: q2,
+      q2_choice: choice,
+      reflection: reflection,
+      source: source,
+    };
+
+    const existing = await fetchWeekCheckin(ws);
+    if (existing && existing.id) {
+      const { data, error } = await c
+        .from("weekly_checkins")
+        .update({
+          q1_text: payload.q1_text,
+          q2_text: payload.q2_text,
+          q2_choice: payload.q2_choice,
+          reflection: payload.reflection,
+          source: payload.source,
+        })
+        .eq("id", existing.id)
+        .eq("user_id", user.id)
+        .select()
+        .maybeSingle();
+      if (error) {
+        console.warn("[CPAuth] saveWeekCheckin update:", error.message);
+        return { ok: false, reason: error.message };
+      }
+      return { ok: true, checkin: data };
+    }
+
+    const { data, error } = await c
+      .from("weekly_checkins")
+      .insert(payload)
+      .select()
+      .maybeSingle();
+    if (error) {
+      // Race on unique — update
+      if (error.code === "23505") {
+        const again = await fetchWeekCheckin(ws);
+        if (again && again.id) {
+          const { data: d2, error: e2 } = await c
+            .from("weekly_checkins")
+            .update({
+              q1_text: payload.q1_text,
+              q2_text: payload.q2_text,
+              q2_choice: payload.q2_choice,
+              reflection: payload.reflection,
+              source: payload.source,
+            })
+            .eq("id", again.id)
+            .select()
+            .maybeSingle();
+          if (e2) return { ok: false, reason: e2.message };
+          return { ok: true, checkin: d2 };
+        }
+      }
+      console.warn("[CPAuth] saveWeekCheckin insert:", error.message);
+      return { ok: false, reason: error.message };
+    }
+    return { ok: true, checkin: data };
+  }
+
   /**
    * tasks: [{ yetkinlik_adi, title, description, minutes, due_hint }]
    * Ayni hafta icin zaten paket varsa yazmaz (yenileme cron/sohbet cakismasin).
@@ -1572,6 +1754,11 @@
     saveMicroTasks,
     markMicroTaskDone,
     generateAndSaveMicroTasks,
+    fetchWeekCheckin,
+    saveWeekCheckin,
+    fetchCheckinHistory,
+    reflectCheckin,
+    checkinTemplateReflection,
     buildJobMatchProfile,
     analyzeJobMatch,
     saveJobMatch,

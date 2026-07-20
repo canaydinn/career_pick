@@ -72,10 +72,17 @@ function ProfilPage() {
   const [hasSnapshot, setHasSnapshot] = useState(false);
   const [sectorPack, setSectorPack] = useState(null);
   const [hasDraft, setHasDraft] = useState(false);
+  const [weekCheckin, setWeekCheckin] = useState(null);
+  const [checkinHistory, setCheckinHistory] = useState([]);
+  const [checkinEditing, setCheckinEditing] = useState(false);
+  const [checkinQ1, setCheckinQ1] = useState("");
+  const [checkinQ2, setCheckinQ2] = useState("");
+  const [checkinChoice, setCheckinChoice] = useState("");
+  const [checkinHistoryOpen, setCheckinHistoryOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function loadPlan() {
-    const [t, steps, g, cmp, micros, snaps, pack, draft] = await Promise.all([
+    const [t, steps, g, cmp, micros, snaps, pack, draft, checkin, history] = await Promise.all([
       CPAuth.fetchTrainings(),
       CPAuth.fetchActiveRoadmap(),
       CPAuth.fetchCareerGoal(),
@@ -84,6 +91,8 @@ function ProfilPage() {
       CPAuth.fetchLastSnapshots(1),
       CPAuth.fetchSectorNotesPack({ locale: lang, personalize: false }),
       CPAuth.fetchActiveChatDraft(),
+      CPAuth.fetchWeekCheckin(),
+      CPAuth.fetchCheckinHistory(6),
     ]);
     setTrainings(t);
     setRoadmap(steps);
@@ -93,6 +102,12 @@ function ProfilPage() {
     setHasSnapshot(!!(snaps && snaps.length));
     setSectorPack(pack || null);
     setHasDraft(!!draft);
+    setWeekCheckin(checkin || null);
+    setCheckinHistory(history || []);
+    setCheckinEditing(!checkin);
+    setCheckinQ1(checkin ? (checkin.q1_text || "") : "");
+    setCheckinQ2(checkin ? (checkin.q2_text || "") : "");
+    setCheckinChoice(checkin ? (checkin.q2_choice || "") : "");
 
     // Opsiyonel kisilestirme — notlar zaten gorunur; cumleler sonra eklenir
     if (pack && pack.notes && pack.notes.length) {
@@ -138,6 +153,12 @@ function ProfilPage() {
         setHasSnapshot(false);
         setSectorPack(null);
         setHasDraft(false);
+        setWeekCheckin(null);
+        setCheckinHistory([]);
+        setCheckinEditing(false);
+        setCheckinQ1("");
+        setCheckinQ2("");
+        setCheckinChoice("");
       }
     }
 
@@ -157,6 +178,17 @@ function ProfilPage() {
       off();
     };
   }, []);
+
+  useEffect(() => {
+    if (!ready || !user) return;
+    if (typeof location !== "undefined" && location.hash === "#check-in") {
+      const el = document.getElementById("check-in");
+      if (el) {
+        try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { /* ignore */ }
+      }
+      setCheckinEditing(true);
+    }
+  }, [ready, user]);
 
   async function login() {
     try {
@@ -190,6 +222,62 @@ function ProfilPage() {
     await CPAuth.markMicroTaskDone(id);
     await loadPlan();
     setBusy(false);
+  }
+
+  async function onSaveCheckin() {
+    const q1 = (checkinQ1 || "").trim();
+    if (!q1) {
+      alert(S.checkinNeedQ1);
+      return;
+    }
+    setBusy(true);
+    const source = (typeof location !== "undefined" && location.hash === "#check-in")
+      ? "email_link"
+      : "profile";
+    const res = await CPAuth.saveWeekCheckin({
+      q1: q1,
+      q2: checkinQ2,
+      q2_choice: checkinChoice || null,
+      source: source,
+      goal: goal,
+      reflect: true,
+    });
+    if (res && res.ok) {
+      setWeekCheckin(res.checkin || null);
+      setCheckinEditing(false);
+      const hist = await CPAuth.fetchCheckinHistory(6);
+      setCheckinHistory(hist || []);
+    }
+    setBusy(false);
+  }
+
+  function startEditCheckin() {
+    setCheckinQ1(weekCheckin ? (weekCheckin.q1_text || "") : "");
+    setCheckinQ2(weekCheckin ? (weekCheckin.q2_text || "") : "");
+    setCheckinChoice(weekCheckin ? (weekCheckin.q2_choice || "") : "");
+    setCheckinEditing(true);
+  }
+
+  function cancelEditCheckin() {
+    if (weekCheckin) {
+      setCheckinEditing(false);
+      setCheckinQ1(weekCheckin.q1_text || "");
+      setCheckinQ2(weekCheckin.q2_text || "");
+      setCheckinChoice(weekCheckin.q2_choice || "");
+    }
+  }
+
+  function formatWeekStart(ws) {
+    if (!ws) return "";
+    try {
+      return new Date(ws + "T12:00:00").toLocaleDateString(lang === "en" ? "en-GB" : "tr-TR", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    } catch (e) {
+      return ws;
+    }
   }
 
   async function toggleReminders() {
@@ -320,6 +408,110 @@ function ProfilPage() {
                     : ""}
                 </p>
               )}
+            </section>
+
+            <section className="pf-checkin" id="check-in" aria-label={S.checkinTitle}>
+              <h3>{S.checkinTitle}</h3>
+              <p className="pf-muted pf-checkin-hint">{S.checkinHint}</p>
+
+              {!weekCheckin && !checkinEditing ? (
+                <p className="pf-muted">{S.checkinEmpty}</p>
+              ) : null}
+
+              {weekCheckin && !checkinEditing ? (
+                <div className="pf-checkin-card">
+                  <p className="pf-checkin-q1">{weekCheckin.q1_text}</p>
+                  {weekCheckin.q2_text ? (
+                    <p className="pf-checkin-q2">{weekCheckin.q2_text}</p>
+                  ) : null}
+                  {weekCheckin.q2_choice && S.checkinChoices ? (
+                    <span className="pf-checkin-tag">
+                      {S.checkinChoices[weekCheckin.q2_choice] || weekCheckin.q2_choice}
+                    </span>
+                  ) : null}
+                  {weekCheckin.reflection ? (
+                    <p className="pf-checkin-reflection">{weekCheckin.reflection}</p>
+                  ) : null}
+                  <button type="button" className="pf-checkin-edit" onClick={startEditCheckin} disabled={busy}>
+                    {S.checkinEdit}
+                  </button>
+                </div>
+              ) : (
+                <div className="pf-checkin-form">
+                  <label className="pf-checkin-label">
+                    {S.checkinQ1}
+                    <textarea
+                      value={checkinQ1}
+                      onChange={(e) => setCheckinQ1(e.target.value)}
+                      rows={3}
+                      disabled={busy}
+                      maxLength={1000}
+                    />
+                  </label>
+                  <label className="pf-checkin-label">
+                    {S.checkinQ2}
+                    <textarea
+                      value={checkinQ2}
+                      onChange={(e) => setCheckinQ2(e.target.value)}
+                      rows={2}
+                      disabled={busy}
+                      maxLength={500}
+                    />
+                  </label>
+                  <div className="pf-checkin-choices">
+                    <span className="pf-checkin-choice-label">{S.checkinChoiceLabel}</span>
+                    <div className="pf-checkin-choice-row">
+                      {["egitim", "pratik", "basvuru", "belirsiz"].map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className={"pf-checkin-chip" + (checkinChoice === key ? " on" : "")}
+                          disabled={busy}
+                          onClick={() => setCheckinChoice(checkinChoice === key ? "" : key)}
+                        >
+                          {(S.checkinChoices && S.checkinChoices[key]) || key}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="pf-checkin-actions">
+                    <button type="button" className="pf-btn" onClick={onSaveCheckin} disabled={busy}>
+                      {S.checkinSave}
+                    </button>
+                    {weekCheckin ? (
+                      <button type="button" className="pf-btn ghost" onClick={cancelEditCheckin} disabled={busy}>
+                        {S.checkinCancel}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              <div className="pf-checkin-history">
+                <button
+                  type="button"
+                  className="pf-checkin-history-toggle"
+                  onClick={() => setCheckinHistoryOpen(!checkinHistoryOpen)}
+                  aria-expanded={checkinHistoryOpen}
+                >
+                  {S.checkinHistory}{checkinHistoryOpen ? " ▴" : " ▾"}
+                </button>
+                {checkinHistoryOpen ? (
+                  checkinHistory.length === 0 ? (
+                    <p className="pf-muted">{S.checkinHistoryEmpty}</p>
+                  ) : (
+                    <ul className="pf-checkin-history-list">
+                      {checkinHistory.map((h) => (
+                        <li key={h.id || h.week_start}>
+                          <strong>{formatWeekStart(h.week_start)}</strong>
+                          <span>{h.q1_text}</span>
+                          {h.reflection ? <em>{h.reflection}</em> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                ) : null}
+              </div>
             </section>
 
             {roadmap.length > 0 ? (

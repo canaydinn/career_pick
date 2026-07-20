@@ -12,6 +12,7 @@ Islemler (action):
 5) compare_summary — onceki vs simdi yetkinlik farkindan tek cumle (opsiyonel)
 6) micro_tasks — zayif yetkinlikler icin 2-4 haftalik kisa pratik
 7) personalize_sector_note — sektor notuna opsiyonel tek cumle (zorunlu degil)
+8) checkin_reflect — haftalik check-in icin tek cumle yansima (opsiyonel)
 
 Ortam: OPENAI_API_KEY, ANTHROPIC_API_KEY, QDRANT_URL, QDRANT_API_KEY,
 (ops.) CLAUDE_MODEL, ALLOWED_ORIGINS
@@ -1121,6 +1122,51 @@ class handler(BaseHTTPRequestHandler):
                 except Exception as e:
                     print("[ERROR] personalize_sector_note:", repr(e))
                     return self._json(200, {"line": ""})
+
+            elif action == "checkin_reflect":
+                q1 = str(data.get("q1") or "")[:800]
+                q2 = str(data.get("q2") or "")[:400]
+                choice = str(data.get("q2_choice") or "").strip()
+                hedef = str(data.get("hedef") or "")[:300]
+                choice_labels = {
+                    "egitim": "egitim",
+                    "pratik": "pratik",
+                    "basvuru": "basvuru",
+                    "belirsiz": "netlesecek bir odak",
+                }
+                focus = choice_labels.get(choice) or (q2.strip()[:80] if q2.strip() else "oncelik")
+                fallback = (
+                    f"Notunu aldık — gelecek hafta odağın: {focus}. Küçük bir adım yeterli."
+                )
+                if not q1.strip():
+                    return self._json(200, {"reflection": fallback, "source": "template"})
+                try:
+                    a = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+                    sistem = (
+                        "CareerPick mentor asistanisin. Haftalik check-in yanitina "
+                        "yumusak, destekleyici TEK cumlelik bir yansima yaz. "
+                        "Kesin maas, tarih veya ise alim garantisi verme. "
+                        "Sadece 1 cumle, baska metin yok. Turkce."
+                    )
+                    user_msg = (
+                        f"BU_HAFTA: {q1}\n"
+                        f"GELECEK_ONCELIK: {q2 or 'belirtilmedi'}\n"
+                        f"SECIM: {choice or 'yok'}\n"
+                        f"KARIYER_HEDEFI: {hedef or 'belirtilmedi'}\n"
+                    )
+                    r = a.messages.create(
+                        model=CLAUDE_MODEL,
+                        max_tokens=80,
+                        system=sistem,
+                        messages=[{"role": "user", "content": user_msg}],
+                    )
+                    line = (r.content[0].text or "").strip().split("\n")[0].strip()[:220]
+                    if not line:
+                        line = fallback
+                    return self._json(200, {"reflection": line, "source": "claude"})
+                except Exception as e:
+                    print("[ERROR] checkin_reflect:", repr(e))
+                    return self._json(200, {"reflection": fallback, "source": "template"})
 
             else:
                 return self._json(400, {"error": "Gecersiz action."})

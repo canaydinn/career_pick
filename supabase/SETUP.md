@@ -117,6 +117,16 @@ SQL Editor’da çalıştır:
 - Sohbet banner: Devam et / Baştan başla; profil linki `?resume=1`
 - `user_answers` audit olarak kalır; UI hydrate kaynağı draft’tır
 
+## 6h. Haftalık check-in (v0.9+)
+
+SQL Editor’da çalıştır:
+
+`migrations/20260720220000_weekly_checkins.sql`
+
+- `weekly_checkins` (`week_start` = mikro görevlerle aynı Pazartesi)
+- Profil: **Haftalık check-in** (`#check-in`) — 1–2 soru, opsiyonel Claude yansıma
+- Hatırlatma mailine “Check-in’i tamamla” CTA (opt-in)
+
 ## 7. Haftalık e-posta hatırlatması (opsiyonel)
 
 Vercel env:
