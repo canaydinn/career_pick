@@ -208,6 +208,7 @@ function KariyerSohbet() {
   const [recs, setRecs] = useStateK([]);
   const [skills, setSkills] = useStateK([]);
   const [skillCompare, setSkillCompare] = useStateK(null);
+  const [sectorFeatured, setSectorFeatured] = useStateK(null);
   const [selected, setSelected] = useStateK(() => ProfileStore.getAll());
   const [authUser, setAuthUser] = useStateK(null);
   const [authReady, setAuthReady] = useStateK(false);
@@ -351,6 +352,54 @@ function KariyerSohbet() {
     }
   }
 
+  async function loadSectorFeatured(cevaplar) {
+    if (!window.CPAuth) return;
+    try {
+      let sectorAnswer = "";
+      if (Array.isArray(cevaplar)) {
+        const hit = cevaplar.find((c) => c && c.key === "hedef_sektor");
+        if (hit) sectorAnswer = hit.cevap || hit.answer || "";
+      }
+      if (!sectorAnswer) {
+        const idx = S.questions.findIndex((q) => q.key === "hedef_sektor");
+        if (idx >= 0 && answers[idx]) sectorAnswer = answers[idx];
+      }
+      const pack = await CPAuth.fetchSectorNotesPack({
+        answerText: sectorAnswer,
+        locale: lang,
+        personalize: false,
+      });
+      const note = pack && pack.notes && pack.notes[0] ? pack.notes[0] : null;
+      if (!note) {
+        setSectorFeatured(null);
+        return;
+      }
+      setSectorFeatured({
+        note: note,
+        sector_key: pack.sector_key,
+        sector_answer: pack.sector_answer || sectorAnswer,
+      });
+      // Opsiyonel tek cumle
+      let goal = "";
+      try { goal = await CPAuth.fetchCareerGoal(); } catch (e) { /* ignore */ }
+      const line = await CPAuth.personalizeSectorNote(note, {
+        goal: goal,
+        sectorAnswer: sectorAnswer,
+      });
+      if (line) {
+        setSectorFeatured((prev) => {
+          if (!prev || !prev.note || prev.note.slug !== note.slug) return prev;
+          return Object.assign({}, prev, {
+            note: Object.assign({}, prev.note, { personal_line: line }),
+          });
+        });
+      }
+    } catch (e) {
+      console.warn("[SOHBET] sector notes:", e.message || e);
+      setSectorFeatured(null);
+    }
+  }
+
   async function runRecommend(finalAnswers, qs) {
     try {
       const cevaplar = buildCevaplar(finalAnswers, qs || questions);
@@ -361,11 +410,13 @@ function KariyerSohbet() {
       setSkills(nextSkills);
       const persisted = await persistResults(nextRecs, nextSkills, cevaplar);
       setSkillCompare((persisted && persisted.comparison) || null);
+      loadSectorFeatured(cevaplar);
     } catch (e) {
       console.error("[SOHBET] recommend:", e.message);
       setRecs([]);
       setSkills([]);
       setSkillCompare(null);
+      setSectorFeatured(null);
     } finally {
       setPhase("result");
     }
@@ -515,6 +566,7 @@ function KariyerSohbet() {
     setRecs([]);
     setSkills([]);
     setSkillCompare(null);
+    setSectorFeatured(null);
     setScenarioQs([]);
     setScenariosReady(false);
     setLoadingScenarios(false);
@@ -729,6 +781,30 @@ function KariyerSohbet() {
                 </ul>
               </div>
             )}
+
+            {sectorFeatured && sectorFeatured.note ? (
+              <div className="cs-sector-note">
+                <div className="cs-sector-note-head">
+                  <h3>{S.result.sectorNoteTitle}</h3>
+                  <a className="cs-sector-all" href="profil.html#sektor-notlari">{S.result.sectorNoteAll}</a>
+                </div>
+                <p className="cs-skills-hint">{S.result.sectorNoteHint}</p>
+                <article className="cs-sector-card">
+                  <h4>{sectorFeatured.note.title}</h4>
+                  <p>{sectorFeatured.note.body}</p>
+                  {sectorFeatured.note.personal_line ? (
+                    <p className="cs-sector-personal">{sectorFeatured.note.personal_line}</p>
+                  ) : null}
+                  <a
+                    className="cs-sector-cta"
+                    href={(window.CPAuth && CPAuth.sectorCtaHref(sectorFeatured.note.cta_type)) || "profil.html#sektor-notlari"}
+                  >
+                    {(S.result.sectorCta && S.result.sectorCta[sectorFeatured.note.cta_type])
+                      || sectorFeatured.note.cta_type}
+                  </a>
+                </article>
+              </div>
+            ) : null}
 
             {recs.length === 0 ? (
               <p className="cs-profile-empty" style={{ textAlign: "center" }}>{S.result.empty}</p>

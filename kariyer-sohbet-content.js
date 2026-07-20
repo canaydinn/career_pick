@@ -64,6 +64,14 @@ window.CP_SOHBET = {
       compareSame: "Benzer seviye",
       compareNew: "Yeni ölçüm",
       compareUnmatched: "Karşılaştırılamadı",
+      sectorNoteTitle: "Sektör notun",
+      sectorNoteHint: "Kısa mentör notu — 3–5 dk. Blog değil.",
+      sectorNoteAll: "Tümünü gör",
+      sectorCta: {
+        micro_task: "İlgili pratiğe git",
+        chat: "Sohbete dön",
+        training: "Eğitime git",
+      },
     },
   },
   en: {
@@ -129,6 +137,14 @@ window.CP_SOHBET = {
       compareSame: "Similar level",
       compareNew: "New measurement",
       compareUnmatched: "Could not compare",
+      sectorNoteTitle: "Your sector note",
+      sectorNoteHint: "Short mentor note — 3–5 min. Not a blog post.",
+      sectorNoteAll: "See all",
+      sectorCta: {
+        micro_task: "Go to related practice",
+        chat: "Back to chat",
+        training: "Go to courses",
+      },
     },
   },
 };

@@ -95,6 +95,17 @@ SQL Editor’da çalıştır:
 
 Sayfa: `/ilan-uyumu.html` — URL veya metin yapıştır → yaklaşık uyum + eğitimler.
 
+## 6f. Sektör mentor notları (v0.7+)
+
+SQL Editor’da çalıştır:
+
+`migrations/20260720120000_sector_notes.sql`
+
+- `sector_notes` tablosu (herkese okuma RLS; istemci yazamaz)
+- Seed: turizm, yazilim, insaat, finans, saglik + genel (~20 kısa not)
+- Profil: **Sektör notların**; sohbet sonuç: öne çıkan not + tümünü gör
+- Migrasyon öncesi istemci fallback: `sector-notes-data.js`
+
 ## 7. Haftalık e-posta hatırlatması (opsiyonel)
 
 Vercel env:

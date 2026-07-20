@@ -11,6 +11,7 @@ Islemler (action):
 4) roadmap   — hedef + yetkinlik + egitimlerden 3-5 adimlik yol haritasi
 5) compare_summary — onceki vs simdi yetkinlik farkindan tek cumle (opsiyonel)
 6) micro_tasks — zayif yetkinlikler icin 2-4 haftalik kisa pratik
+7) personalize_sector_note — sektor notuna opsiyonel tek cumle (zorunlu degil)
 
 Ortam: OPENAI_API_KEY, ANTHROPIC_API_KEY, QDRANT_URL, QDRANT_API_KEY,
 (ops.) CLAUDE_MODEL, ALLOWED_ORIGINS
@@ -1085,6 +1086,41 @@ class handler(BaseHTTPRequestHandler):
                 a, _, _ = _clients()
                 result = mikro_gorev_uret(yetkinlikler, a)
                 return self._json(200, result)
+
+            elif action == "personalize_sector_note":
+                # Opsiyonel: not govdesi sabittir; sadece tek cumle ek.
+                title = str(data.get("title") or "")[:200]
+                body = str(data.get("body") or "")[:1200]
+                hedef = str(data.get("hedef") or "")[:300]
+                sektor = str(data.get("sektor") or "")[:200]
+                if not body:
+                    return self._json(200, {"line": ""})
+                try:
+                    a = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+                    sistem = (
+                        "CareerPick mentor asistanisin. Verilen kisa sektor notuna uygun, "
+                        "kullanicinin hedefine ozel TEK cumle yaz. "
+                        "Kesin maas, tarih veya ise alim garantisi verme. "
+                        "Sadece 1 cumle, baska metin yok. Turkce."
+                    )
+                    user_msg = (
+                        f"BASLIK: {title}\n"
+                        f"NOT: {body}\n"
+                        f"HEDEF_SEKTOR: {sektor or 'belirtilmedi'}\n"
+                        f"KARIYER_HEDEFI: {hedef or 'belirtilmedi'}\n"
+                    )
+                    r = a.messages.create(
+                        model=CLAUDE_MODEL,
+                        max_tokens=80,
+                        system=sistem,
+                        messages=[{"role": "user", "content": user_msg}],
+                    )
+                    line = (r.content[0].text or "").strip().split("\n")[0].strip()
+                    line = line[:220]
+                    return self._json(200, {"line": line})
+                except Exception as e:
+                    print("[ERROR] personalize_sector_note:", repr(e))
+                    return self._json(200, {"line": ""})
 
             else:
                 return self._json(400, {"error": "Gecersiz action."})

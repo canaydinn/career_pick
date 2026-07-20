@@ -689,6 +689,200 @@
       .replace(/\s+/g, " ");
   }
 
+  /** Sektor metni: TR kucuk harf + aksan sadeleştirme (eslestirme) */
+  function normalizeSectorText(text) {
+    return String(text || "")
+      .trim()
+      .toLocaleLowerCase("tr-TR")
+      .replace(/ı/g, "i")
+      .replace(/İ/g, "i")
+      .replace(/ğ/g, "g")
+      .replace(/ü/g, "u")
+      .replace(/ş/g, "s")
+      .replace(/ö/g, "o")
+      .replace(/ç/g, "c")
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  var SECTOR_ALIASES = {
+    turizm: ["turizm", "otel", "hotel", "hospitality", "konaklama", "resort", "misafir"],
+    yazilim: ["yazilim", "software", "developer", "programlama", "bilisim", "teknoloji", "kodlama", "devops", "frontend", "backend"],
+    insaat: ["insaat", "construction", "santiye", "muteahhit", "yapi"],
+    finans: ["finans", "muhasebe", "banka", "finance", "accounting", "maliye", "yatirim"],
+    saglik: ["saglik", "health", "hastane", "hemsire", "medikal", "klinik", "eczane"],
+  };
+
+  /**
+   * hedef_sektor yanitini sector_key ile eslestir.
+   * Eslesme yoksa "genel".
+   */
+  function matchSectorKey(answerText) {
+    const t = normalizeSectorText(answerText);
+    if (!t) return "genel";
+    const keys = ["turizm", "yazilim", "insaat", "finans", "saglik"];
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const aliases = SECTOR_ALIASES[key] || [];
+      for (let j = 0; j < aliases.length; j++) {
+        if (t.indexOf(aliases[j]) !== -1) return key;
+      }
+      if (t.indexOf(key) !== -1) return key;
+    }
+    return "genel";
+  }
+
+  function sectorNotesFallback(sectorKey, locale) {
+    const list = (typeof global.CP_SECTOR_NOTES_FALLBACK !== "undefined" && Array.isArray(global.CP_SECTOR_NOTES_FALLBACK))
+      ? global.CP_SECTOR_NOTES_FALLBACK
+      : [];
+    const loc = locale === "en" ? "en" : "tr";
+    let key = sectorKey || "genel";
+    let notes = list
+      .filter((n) => n.sector_key === key && (n.locale || "tr") === loc)
+      .slice()
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    if (!notes.length && key !== "genel") {
+      key = "genel";
+      notes = list
+        .filter((n) => n.sector_key === "genel" && (n.locale || "tr") === loc)
+        .slice()
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+    if (!notes.length && loc === "en") {
+      return sectorNotesFallback(sectorKey, "tr");
+    }
+    return { sector_key: key, notes: notes, source: "fallback" };
+  }
+
+  async function querySectorNotes(sectorKey, locale) {
+    const c = await getClient();
+    if (!c) return [];
+    const loc = locale === "en" ? "en" : "tr";
+    const { data, error } = await c
+      .from("sector_notes")
+      .select("id, sector_key, slug, title, body, tags, order, locale, cta_type")
+      .eq("sector_key", sectorKey)
+      .eq("locale", loc)
+      .order("order", { ascending: true });
+    if (error) {
+      console.warn("[CPAuth] querySectorNotes:", error.message);
+      return null;
+    }
+    return data || [];
+  }
+
+  /**
+   * Sektör notlarını getir. Eslesmeyen / bos paket → genel.
+   * DB yoksa veya hata varsa istemci fallback.
+   */
+  async function fetchSectorNotes(sectorKeyOrAnswer, locale) {
+    const loc = locale === "en" ? "en" : "tr";
+    const raw = String(sectorKeyOrAnswer || "").trim();
+    const known = ["turizm", "yazilim", "insaat", "finans", "saglik", "genel"];
+    const matched = known.indexOf(raw) !== -1 ? raw : matchSectorKey(raw);
+
+    let notes = await querySectorNotes(matched, loc);
+    if (notes === null) {
+      return sectorNotesFallback(matched, loc);
+    }
+    let usedKey = matched;
+    if (!notes.length && matched !== "genel") {
+      notes = await querySectorNotes("genel", loc);
+      usedKey = "genel";
+      if (notes === null) return sectorNotesFallback(matched, loc);
+    }
+    if (!notes.length) {
+      return sectorNotesFallback(matched, loc);
+    }
+    return { sector_key: usedKey, matched_key: matched, notes: notes, source: "db" };
+  }
+
+  async function fetchLatestSectorAnswer() {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return "";
+    const { data, error } = await c
+      .from("user_answers")
+      .select("answer_text, created_at")
+      .eq("user_id", user.id)
+      .eq("question_id", "hedef_sektor")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      console.warn("[CPAuth] fetchLatestSectorAnswer:", error.message);
+      return "";
+    }
+    return (data && data[0] && data[0].answer_text) || "";
+  }
+
+  /**
+   * Profil / sohbet icin paket: eslesen sektor + notlar.
+   * personalize=true ise her nota opsiyonel tek cumle ekler (basarisiz olursa sessizce atlar).
+   */
+  async function fetchSectorNotesPack({ answerText, locale, personalize, goal } = {}) {
+    let sectorAnswer = answerText;
+    if (sectorAnswer == null || sectorAnswer === "") {
+      sectorAnswer = await fetchLatestSectorAnswer();
+    }
+    const matched = matchSectorKey(sectorAnswer);
+    const pack = await fetchSectorNotes(matched, locale || "tr");
+    const notes = (pack.notes || []).map((n) => Object.assign({}, n));
+    if (personalize && notes.length) {
+      const g = goal != null ? goal : await fetchCareerGoal();
+      await Promise.all(
+        notes.map(async (n) => {
+          try {
+            const line = await personalizeSectorNote(n, {
+              goal: g,
+              sectorAnswer: sectorAnswer,
+            });
+            if (line) n.personal_line = line;
+          } catch (e) { /* ignore */ }
+        })
+      );
+    }
+    return {
+      sector_key: pack.sector_key || matched,
+      matched_key: matched,
+      sector_answer: sectorAnswer || "",
+      notes: notes,
+      source: pack.source || "db",
+    };
+  }
+
+  /** Opsiyonel: Claude ile not sonuna tek cumle (basarisiz → "") */
+  async function personalizeSectorNote(note, { goal, sectorAnswer } = {}) {
+    if (!note || !note.body) return "";
+    try {
+      const r = await fetch("/api/sohbet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "personalize_sector_note",
+          title: note.title || "",
+          body: String(note.body || "").slice(0, 1200),
+          hedef: String(goal || "").slice(0, 300),
+          sektor: String(sectorAnswer || "").slice(0, 200),
+        }),
+      });
+      if (!r.ok) return "";
+      const data = await r.json();
+      const line = (data && data.line) ? String(data.line).trim() : "";
+      return line.slice(0, 220);
+    } catch (e) {
+      console.warn("[CPAuth] personalizeSectorNote:", e.message || e);
+      return "";
+    }
+  }
+
+  function sectorCtaHref(ctaType) {
+    if (ctaType === "micro_task") return "profil.html#pratiker";
+    if (ctaType === "training") return "profil.html";
+    return "kariyer%20sohbet.html";
+  }
+
   /**
    * Sohbet sonu yetkinlik snapshot'i.
    * skills: [{ yetkinlik, puan, seviye, yorum }]
@@ -1140,6 +1334,13 @@
     overallProgress,
     getWeekActions,
     normalizeYetkinlikAdi,
+    normalizeSectorText,
+    matchSectorKey,
+    fetchSectorNotes,
+    fetchLatestSectorAnswer,
+    fetchSectorNotesPack,
+    personalizeSectorNote,
+    sectorCtaHref,
     saveCompetencySnapshot,
     fetchLastSnapshots,
     compareLastCompetencySnapshots,

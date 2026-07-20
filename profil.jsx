@@ -70,16 +70,18 @@ function ProfilPage() {
   const [skillSummary, setSkillSummary] = useState(null);
   const [microTasks, setMicroTasks] = useState([]);
   const [hasSnapshot, setHasSnapshot] = useState(false);
+  const [sectorPack, setSectorPack] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function loadPlan() {
-    const [t, steps, g, cmp, micros, snaps] = await Promise.all([
+    const [t, steps, g, cmp, micros, snaps, pack] = await Promise.all([
       CPAuth.fetchTrainings(),
       CPAuth.fetchActiveRoadmap(),
       CPAuth.fetchCareerGoal(),
       CPAuth.fetchCompetencyComparisonSummary(),
       CPAuth.fetchWeekMicroTasks(),
       CPAuth.fetchLastSnapshots(1),
+      CPAuth.fetchSectorNotesPack({ locale: lang, personalize: false }),
     ]);
     setTrainings(t);
     setRoadmap(steps);
@@ -87,6 +89,27 @@ function ProfilPage() {
     setSkillSummary(cmp || null);
     setMicroTasks(micros || []);
     setHasSnapshot(!!(snaps && snaps.length));
+    setSectorPack(pack || null);
+
+    // Opsiyonel kisilestirme — notlar zaten gorunur; cumleler sonra eklenir
+    if (pack && pack.notes && pack.notes.length) {
+      const goalText = g || "";
+      const sectorAnswer = pack.sector_answer || "";
+      Promise.all(
+        pack.notes.map(async (n) => {
+          const line = await CPAuth.personalizeSectorNote(n, {
+            goal: goalText,
+            sectorAnswer: sectorAnswer,
+          });
+          return line ? Object.assign({}, n, { personal_line: line }) : n;
+        })
+      ).then((enriched) => {
+        setSectorPack((prev) => {
+          if (!prev || prev.sector_key !== pack.sector_key) return prev;
+          return Object.assign({}, prev, { notes: enriched });
+        });
+      }).catch(() => {});
+    }
   }
 
   useEffect(() => {
@@ -110,6 +133,7 @@ function ProfilPage() {
         setSkillSummary(null);
         setMicroTasks([]);
         setHasSnapshot(false);
+        setSectorPack(null);
       }
     }
 
@@ -329,7 +353,7 @@ function ProfilPage() {
               </section>
             ) : null}
 
-            <section className="pf-micro">
+            <section className="pf-micro" id="pratiker">
               <h3>{S.microTitle}</h3>
               <p className="pf-muted pf-micro-hint">{S.microHint}</p>
               {!hasSnapshot ? (
@@ -359,6 +383,41 @@ function ProfilPage() {
                         >
                           {done ? S.microDoneLabel : S.microDone}
                         </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+
+            <section className="pf-sector-notes" id="sektor-notlari" aria-label={S.sectorNotesTitle}>
+              <div className="pf-sector-head">
+                <h2>{S.sectorNotesTitle}</h2>
+                {sectorPack && sectorPack.sector_key ? (
+                  <span className="pf-sector-badge">
+                    {typeof S.sectorNotesSector === "function"
+                      ? S.sectorNotesSector(sectorPack.sector_key)
+                      : sectorPack.sector_key}
+                  </span>
+                ) : null}
+              </div>
+              <p className="pf-muted pf-sector-hint">{S.sectorNotesHint}</p>
+              {!sectorPack || !sectorPack.notes || sectorPack.notes.length === 0 ? (
+                <p className="pf-muted">{S.sectorNotesEmpty}</p>
+              ) : (
+                <ul className="pf-sector-list">
+                  {sectorPack.notes.map((n) => {
+                    const cta = n.cta_type || "chat";
+                    const href = CPAuth.sectorCtaHref(cta);
+                    const label = (S.sectorCta && S.sectorCta[cta]) || cta;
+                    return (
+                      <li key={n.id || n.slug} className="pf-sector-card">
+                        <h3>{n.title}</h3>
+                        <p className="pf-sector-body">{n.body}</p>
+                        {n.personal_line ? (
+                          <p className="pf-sector-personal">{n.personal_line}</p>
+                        ) : null}
+                        <a className="pf-sector-cta" href={href}>{label}</a>
                       </li>
                     );
                   })}
