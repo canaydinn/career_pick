@@ -7,6 +7,7 @@ Islemler (action):
 
 1) evaluate  — yanit yeterliligi (max 1 takip; kisa ama net cevaplar kabul)
 2) scenarios — profil yanitlarina gore RAG'den meta_senaryo ceker
+               (ops.: kariyer_gecis_haritasi baglami ile sorgu zenginlestirme)
 3) recommend — profil + senaryo puanlariyla egitim onerir
 4) roadmap   — hedef + yetkinlik + egitimlerden 3-5 adimlik yol haritasi
                (oncelik: kariyer_gecis_haritasi eslesmesi → Claude/yetkinlik fallback)
@@ -425,20 +426,54 @@ def _meta_senaryo_getir(yetkinlik_nolari, arama_baglam, o, q, adet=SENARYO_ADETI
     return [s["payload"] for s in selected]
 
 
-def _build_senaryo_sorgulari(meslek_adi, sektor, yetkinlik_adlari, nolar, baglam):
+def _gecis_senaryo_baglam_metni(eslesme):
+    """
+    Meta senaryo RAG sorgusu icin kisa ek baglam:
+    alt_fonksiyon + kariyer_seviyesi + oncul rol adlari.
+    """
+    if not eslesme or not isinstance(eslesme, dict):
+        return ""
+    parts = []
+    for key in ("alt_fonksiyon", "kariyer_seviyesi"):
+        val = str(eslesme.get(key) or "").strip()
+        if val:
+            parts.append(val)
+    for item in (eslesme.get("oncul_roller") or [])[:6]:
+        if isinstance(item, dict):
+            ad = str(item.get("rol_adi") or "").strip()
+            if ad:
+                parts.append(ad)
+        else:
+            ad = str(item or "").strip()
+            if ad:
+                parts.append(ad)
+    # Tekrarlari koru ama asiri uzun olmasin
+    seen = set()
+    out = []
+    for p in parts:
+        key = _normalize_tr_text(p)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return " ".join(out)[:400]
+
+
+def _build_senaryo_sorgulari(meslek_adi, sektor, yetkinlik_adlari, nolar, baglam, gecis_baglam=""):
     """Oncelikli cascade sorgulari."""
     adlar = " ".join(yetkinlik_adlari[:6])
     nolar_txt = " ".join(str(n) for n in (nolar or [])[:8])
     meslek = (meslek_adi or "").strip()
     sektor = (sektor or "").strip()
     baglam = (baglam or "").strip()
+    gecis = (gecis_baglam or "").strip()
 
     q1 = " ".join(
-        p for p in [meslek, sektor, adlar, "is yeri yetkinlik senaryosu"]
+        p for p in [meslek, sektor, gecis, adlar, "is yeri yetkinlik senaryosu"]
         if p
     ).strip()
     q2 = " ".join(
-        p for p in [meslek, adlar, nolar_txt, "yetkinlik degerlendirme senaryo"]
+        p for p in [meslek, gecis, adlar, nolar_txt, "yetkinlik degerlendirme senaryo"]
         if p
     ).strip()
     q3 = " ".join(
@@ -477,8 +512,27 @@ def senaryolari_hazirla(cevaplar, o, q):
     meslek_adi = (profil or {}).get("meslek_adi", "") or ""
     sektor_key, keywords = _sektor_keywords_for(cevaplar, meslek_adi)
 
+    # Opsiyonel: kariyer_gecis_haritasi baglami (hata / eslesme yok → mevcut akis)
+    gecis_baglam = ""
+    try:
+        eslesme = _kariyer_gecis_haritasi_eslestir(hedef, o, q) if hedef else None
+        if eslesme:
+            gecis_baglam = _gecis_senaryo_baglam_metni(eslesme)
+            if gecis_baglam:
+                print(
+                    f"[SENARYO] gecis_baglam meslek={eslesme.get('meslek_adi')!r} "
+                    f"score={eslesme.get('score')}"
+                )
+    except Exception as e:
+        # Nice-to-have: Qdrant/eslestirme hatasi sohbeti kesmesin
+        print("[ERROR] senaryo gecis_haritasi (yutulan):", repr(e))
+        gecis_baglam = ""
+
+    if gecis_baglam:
+        baglam_genis = f"{baglam_genis} {gecis_baglam}".strip()
+
     sorgular = _build_senaryo_sorgulari(
-        meslek_adi, sektor, yetkinlik_adlari, nolar, baglam_genis
+        meslek_adi, sektor, yetkinlik_adlari, nolar, baglam_genis, gecis_baglam=gecis_baglam
     )
 
     selected = []
@@ -540,6 +594,7 @@ def senaryolari_hazirla(cevaplar, o, q):
     print(
         "[SENARYO]",
         f"meslek={meslek_adi!r}",
+        f"gecis={'evet' if gecis_baglam else 'hayir'}",
         f"variant={used_variant}",
         f"quality={match_quality}",
         f"nolar={nolar[:6]}",
@@ -573,6 +628,7 @@ def senaryolari_hazirla(cevaplar, o, q):
         "fallback": fallback,
         "sektor_key": sektor_key,
         "query_variant": used_variant,
+        "gecis_baglam": bool(gecis_baglam),
     }
 
 
