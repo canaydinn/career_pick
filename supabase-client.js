@@ -535,14 +535,17 @@
 
   /**
    * steps: [{ title, description, training_ids: string[] }]
+   * kaynak: "roadmap_veri" | "roadmap_genel" (varsayilan: roadmap_genel)
    * Once mevcut roadmap arsivlenir, yeni 3-5 adim yazilir, egitimlere step_id baglanir.
    */
-  async function saveRoadmap(steps) {
+  async function saveRoadmap(steps, kaynak) {
     const c = await getClient();
     const user = await getUser();
     if (!c || !user || !Array.isArray(steps) || !steps.length) {
       return { ok: false, reason: "auth_or_empty" };
     }
+
+    const kaynakVal = kaynak === "roadmap_veri" ? "roadmap_veri" : "roadmap_genel";
 
     const cleaned = steps.slice(0, 5).map((s, i) => ({
       title: String(s.title || "").trim() || ("Adım " + (i + 1)),
@@ -563,6 +566,7 @@
       description: s.description.slice(0, 500) || null,
       status: i === 0 ? "aktif" : "bekliyor",
       archived: false,
+      kaynak: kaynakVal,
     }));
 
     const { data: inserted, error } = await c
@@ -593,7 +597,7 @@
     }
 
     await syncRoadmapProgress();
-    return { ok: true, steps: inserted };
+    return { ok: true, steps: inserted, kaynak: kaynakVal };
   }
 
   /** Adimdaki tum egitimler tamamlandiysa adimi bitti yap, sonrakini aktif et. */

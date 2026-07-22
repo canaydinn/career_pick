@@ -128,6 +128,8 @@ class DevHandler(SimpleHTTPRequestHandler):
                     data.get("yetkinlikler") if isinstance(data.get("yetkinlikler"), list) else [],
                     data.get("trainings") if isinstance(data.get("trainings"), list) else [],
                     a,
+                    o,
+                    q,
                 ))
             elif action == "micro_tasks":
                 print("[REQ] micro_tasks")

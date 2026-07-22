@@ -9,6 +9,7 @@ Islemler (action):
 2) scenarios — profil yanitlarina gore RAG'den meta_senaryo ceker
 3) recommend — profil + senaryo puanlariyla egitim onerir
 4) roadmap   — hedef + yetkinlik + egitimlerden 3-5 adimlik yol haritasi
+               (oncelik: kariyer_gecis_haritasi eslesmesi → Claude/yetkinlik fallback)
 5) compare_summary — onceki vs simdi yetkinlik farkindan tek cumle (opsiyonel)
 6) micro_tasks — zayif yetkinlikler icin 2-4 haftalik kisa pratik
 7) personalize_sector_note — sektor notuna opsiyonel tek cumle (zorunlu degil)
@@ -36,6 +37,8 @@ CLAUDE_MODEL       = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
 EKSIK_ESIGI        = 3.0
 SENARYO_ADETI      = 5
 MAX_FOLLOWUP_TRIES = 1
+# kariyer_gecis_haritasi: cosine benzerlik esigi (gevsek tutulmaz — yanlis meslek riski)
+GECIS_HARITASI_MIN_SCORE = 0.75
 
 MAX_FIELD_LEN  = 4000
 MAX_BODY_LEN   = 60_000
@@ -1107,6 +1110,180 @@ def _bucket_for_training(t):
     return 1  # varsayilan: uygulama
 
 
+def _veri_notu_dusuk_guven(veri_notu):
+    """kariyer_gecis_haritasi kayitlarinda dusuk guven sinyali."""
+    blob = _normalize_tr_text(veri_notu)
+    if not blob:
+        return False
+    markers = (
+        "yetkinlik fallback atamasi",
+        "yetkinlikfallback atamasi",
+        "iliskisiz giris",
+        "tepe seviye",
+    )
+    return any(m in blob for m in markers)
+
+
+def _format_gecis_roller(roller, limit=8):
+    if not isinstance(roller, list):
+        return "(yok)"
+    lines = []
+    for item in roller:
+        if len(lines) >= limit:
+            break
+        if isinstance(item, dict):
+            ad = str(item.get("rol_adi") or "").strip()
+            gerekce = str(item.get("gerekce") or "").strip()
+            if not ad:
+                continue
+            lines.append(f"- {ad}" + (f": {gerekce}" if gerekce else ""))
+        else:
+            ad = str(item or "").strip()
+            if ad:
+                lines.append(f"- {ad}")
+    return "\n".join(lines) if lines else "(yok)"
+
+
+def _kariyer_gecis_haritasi_eslestir(hedef, o, q):
+    """
+    kariyer_hedefi embedding ile Qdrant'ta en yakin meslek_adi.
+    Skor < GECIS_HARITASI_MIN_SCORE ise eslesme yok.
+    veri_notu dusuk guven ise kayit kullanilmaz (fallback'e birakilir).
+
+    Politika (veri_notu): Dusuk guven kayitlari ATLA — Claude'a temkinli dil
+    vermek yerine mevcut yetkinlik/Claude fallback kullanilir. Yanlis meslek
+    eslesmesi yaniltici rota gosterme riski tasidigi icin guvenilmez kayit
+    zorlanmaz.
+    """
+    hedef = str(hedef or "").strip()
+    if not hedef:
+        return None
+
+    res = q.query_points(
+        collection_name=CAREER_COLLECTION,
+        query=_embed(hedef, o),
+        query_filter=Filter(must=[
+            FieldCondition(
+                key="chunk_type",
+                match=MatchValue(value="kariyer_gecis_haritasi"),
+            )
+        ]),
+        limit=3,
+        with_payload=True,
+    )
+    points = list(res.points or [])
+    if not points:
+        return None
+
+    best = None
+    best_score = -1.0
+    for p in points:
+        pl = p.payload or {}
+        try:
+            score = float(getattr(p, "score", None) or 0.0)
+        except (TypeError, ValueError):
+            score = 0.0
+        meslek = str(pl.get("meslek_adi") or "").strip()
+        if not meslek:
+            continue
+        if score > best_score:
+            best_score = score
+            best = pl
+
+    if best is None or best_score < GECIS_HARITASI_MIN_SCORE:
+        print(
+            f"[ROADMAP] gecis_haritasi eslesme yok "
+            f"(best_score={best_score:.3f}, esik={GECIS_HARITASI_MIN_SCORE})"
+        )
+        return None
+
+    veri_notu = str(best.get("veri_notu") or "")
+    if _veri_notu_dusuk_guven(veri_notu):
+        # Politika: dusuk guven kaydi kullanma → caller fallback'e gecer.
+        print(
+            f"[ROADMAP] gecis_haritasi dusuk guven atlandi "
+            f"meslek={best.get('meslek_adi')!r} veri_notu={veri_notu[:120]!r}"
+        )
+        return None
+
+    print(
+        f"[ROADMAP] gecis_haritasi eslesti meslek={best.get('meslek_adi')!r} "
+        f"score={best_score:.3f}"
+    )
+    return {
+        "meslek_adi": str(best.get("meslek_adi") or "").strip(),
+        "aile": str(best.get("aile") or "").strip(),
+        "alt_fonksiyon": str(best.get("alt_fonksiyon") or "").strip(),
+        "kariyer_seviyesi": str(best.get("kariyer_seviyesi") or "").strip(),
+        "egitim": str(best.get("egitim") or "").strip(),
+        "sektor": str(best.get("sektor") or "").strip(),
+        "veri_notu": veri_notu,
+        "oncul_roller": best.get("oncul_roller") if isinstance(best.get("oncul_roller"), list) else [],
+        "ardil_roller": best.get("ardil_roller") if isinstance(best.get("ardil_roller"), list) else [],
+        "yatay_gecisler": best.get("yatay_gecisler"),
+        "score": best_score,
+    }
+
+
+def _yol_haritasi_veriden_uret(hedef, yetkinlikler, trainings, eslesme, a, valid_ids):
+    """oncul/ardil roller baglamiyla Claude'dan roadmap; basarisizsa None."""
+    oncul = _format_gecis_roller(eslesme.get("oncul_roller"))
+    ardil = _format_gecis_roller(eslesme.get("ardil_roller"))
+    y_satir = "\n".join(
+        f"- {y.get('yetkinlik','')}: {y.get('puan','?')}/5 ({y.get('seviye','')})"
+        for y in yetkinlikler if isinstance(y, dict) and y.get("yetkinlik")
+    ) or "(yok)"
+    egitim_json = json.dumps(
+        [{"training_id": t["training_id"], "ad": t["training_name"]} for t in trainings],
+        ensure_ascii=False,
+    )
+    meta = (
+        f"Meslek: {eslesme.get('meslek_adi') or '-'}\n"
+        f"Aile: {eslesme.get('aile') or '-'}\n"
+        f"Alt fonksiyon: {eslesme.get('alt_fonksiyon') or '-'}\n"
+        f"Seviye: {eslesme.get('kariyer_seviyesi') or '-'}\n"
+        f"Sektör: {eslesme.get('sektor') or '-'}\n"
+        f"Eğitim notu: {eslesme.get('egitim') or '-'}"
+    )
+
+    sistem = """Sen CareerPick kariyer danismansin.
+Gorev: kullanicinin kariyer hedefi icin 3 ile 5 adimlik yol haritasi uret.
+Adimlar asagidaki GERCEK kariyer gecis verisine dayanmali:
+- Oncul roller = kullanicinin muhtemel mevcut / gecis oncesi durumu (erken adimlar).
+- Ardil roller = hedef meslege ulastiktan sonra ilerleme (son adimlar).
+Rol adlarini uydurma; verilen listeden tureterek baslik/aciklama yaz.
+Her adima verilen egitim listesinden 0 veya daha fazla training_id bagla.
+Listede olmayan training_id UYDURMA.
+Kesin tarih, maas rakami veya is garantisi VERME.
+Sadece JSON dondur, baska metin yok:
+{"steps":[{"title":"...","description":"...","training_ids":["..."]}]}
+Kurallar: steps uzunlugu 3-5; title kisa; description 1-2 cumle."""
+
+    user = (
+        f"KULLANICI HEDEFİ:\n{hedef or '(belirtilmedi)'}\n\n"
+        f"EŞLEŞEN MESLEK KAYDI:\n{meta}\n\n"
+        f"ÖNCÜL ROLLER (erken adımlar):\n{oncul}\n\n"
+        f"ARDIL ROLLER (hedef sonrası ilerleme):\n{ardil}\n\n"
+        f"ZAYIF / GELİŞTİRİLECEK YETKİNLİKLER:\n{y_satir}\n\n"
+        f"ÖNERİLEN EĞİTİMLER (JSON):\n{egitim_json}"
+    )
+
+    try:
+        r = a.messages.create(
+            model=CLAUDE_MODEL, max_tokens=1600, system=sistem,
+            messages=[{"role": "user", "content": user}],
+        )
+        txt = r.content[0].text.strip()
+        d = _json_obj_bul(txt)
+        if d:
+            cleaned = _sanitize_roadmap_steps(d.get("steps"), valid_ids)
+            if cleaned:
+                return cleaned
+    except Exception as e:
+        print("[ERROR] roadmap gecis_haritasi claude:", repr(e))
+    return None
+
+
 def roadmap_fallback(hedef, yetkinlikler, trainings):
     """Claude basarisizsa egitimleri Temel / Uygulama / Liderlik kovalarina bol."""
     buckets = [[], [], []]
@@ -1187,21 +1364,49 @@ def _sanitize_roadmap_steps(raw_steps, valid_ids):
     return steps[:5]
 
 
-def yol_haritasi_uret(hedef, yetkinlikler, trainings, a):
+def yol_haritasi_uret(hedef, yetkinlikler, trainings, a, o=None, q=None):
     """
-    Claude'dan 3-5 adimlik JSON roadmap.
-    Basarisizsa Temel/Uygulama/Liderlik fallback.
-    Donus: { steps, source }
+    Yol haritasi uretimi (oncelik sirasi):
+    1) kariyer_gecis_haritasi eslesmesi (skor >= esik) → oncul/ardil ile Claude
+       → kaynak=roadmap_veri
+    2) Claude genel 3-5 adim (mevcut)
+       → kaynak=roadmap_genel
+    3) Yetkinlik/egitim uc kova fallback (mevcut, degismedi)
+       → kaynak=roadmap_genel
+    Donus: { steps, kaynak, source }
     """
     trainings = _normalize_trainings_payload(trainings)
     hedef = str(hedef or "").strip()[:400]
     yetkinlikler = yetkinlikler if isinstance(yetkinlikler, list) else []
     valid_ids = {t["training_id"] for t in trainings}
 
+    # ── Oncelikli katman: kariyer gecis haritasi ──────────────────────────────
+    eslesme = None
+    if hedef and o is not None and q is not None:
+        try:
+            eslesme = _kariyer_gecis_haritasi_eslestir(hedef, o, q)
+        except Exception as e:
+            print("[ERROR] gecis_haritasi eslestir:", repr(e))
+            eslesme = None
+
+    if eslesme:
+        cleaned = _yol_haritasi_veriden_uret(
+            hedef, yetkinlikler, trainings, eslesme, a, valid_ids
+        )
+        if cleaned:
+            return {
+                "steps": cleaned,
+                "kaynak": "roadmap_veri",
+                "source": "gecis_haritasi",
+                "meslek_adi": eslesme.get("meslek_adi") or "",
+                "match_score": eslesme.get("score"),
+            }
+
+    # ── Mevcut fallback yollari (degismedi) ───────────────────────────────────
     if not trainings:
-        # Egitim yoksa yine 3 adimlik iskelet
         return {
             "steps": roadmap_fallback(hedef, yetkinlikler, []),
+            "kaynak": "roadmap_genel",
             "source": "fallback",
         }
 
@@ -1241,12 +1446,17 @@ Kurallar: steps uzunlugu 3-5; title kisa; description 1-2 cumle."""
             if cleaned:
                 # Hic egitim baglanmadiysa fallback'e dus
                 if any(s["training_ids"] for s in cleaned) or not valid_ids:
-                    return {"steps": cleaned, "source": "claude"}
+                    return {
+                        "steps": cleaned,
+                        "kaynak": "roadmap_genel",
+                        "source": "claude",
+                    }
     except Exception as e:
         print("[ERROR] roadmap claude:", repr(e))
 
     return {
         "steps": roadmap_fallback(hedef, yetkinlikler, trainings),
+        "kaynak": "roadmap_genel",
         "source": "fallback",
     }
 
@@ -1620,8 +1830,8 @@ class handler(BaseHTTPRequestHandler):
                 trainings = data.get("trainings") if isinstance(data.get("trainings"), list) else []
                 if not hedef and not trainings:
                     return self._json(400, {"error": "Hedef veya egitim listesi gerekli."})
-                a, _, _ = _clients()
-                result = yol_haritasi_uret(hedef, yetkinlikler, trainings, a)
+                a, o, q = _clients()
+                result = yol_haritasi_uret(hedef, yetkinlikler, trainings, a, o, q)
                 return self._json(200, result)
 
             elif action == "compare_summary":

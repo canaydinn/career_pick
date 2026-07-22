@@ -117,8 +117,9 @@ async function persistRoadmap(trainings, skills, cevaplar) {
     if (!r.ok) throw new Error("roadmap_http");
     const data = await r.json();
     const steps = Array.isArray(data.steps) ? data.steps : [];
+    const kaynak = data.kaynak === "roadmap_veri" ? "roadmap_veri" : "roadmap_genel";
     if (steps.length >= 3) {
-      await CPAuth.saveRoadmap(steps);
+      await CPAuth.saveRoadmap(steps, kaynak);
     }
   } catch (e) {
     console.warn("[SOHBET] persistRoadmap:", e.message || e);
