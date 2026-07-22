@@ -42,6 +42,7 @@ def _load(modname, filename):
 
 sohbet = _load("sohbet", "sohbet.py")
 job_match = _load("job_match", "job-match.py")
+yatay_gecis = _load("yatay_gecis", "yatay-gecis.py")
 
 
 class DevHandler(SimpleHTTPRequestHandler):
@@ -101,6 +102,14 @@ class DevHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 import traceback; traceback.print_exc()
                 return self._json(503, {"ok": False, "error": f"AI hata: {e}", "need_paste": True})
+
+        if path == "/api/yatay-gecis":
+            try:
+                print("[REQ] yatay-gecis")
+                return self._json(200, yatay_gecis.oner_yatay_gecis(data.get("mevcut_rol") or ""))
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                return self._json(200, {"ok": True, "suggestions": []})
 
         if path != "/api/sohbet":
             return self._json(404, {"error": "Bulunamadi"})

@@ -673,6 +673,59 @@
     return data;
   }
 
+  async function saveMevcutRol(rol) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user) return { ok: false, reason: "auth" };
+    const val = String(rol || "").trim().slice(0, 160);
+    const { data, error } = await c
+      .from("profiles")
+      .update({ mevcut_rol: val || null })
+      .eq("id", user.id)
+      .select()
+      .maybeSingle();
+    if (error) {
+      console.warn("[CPAuth] saveMevcutRol:", error.message);
+      return { ok: false, reason: error.message };
+    }
+    return { ok: true, profile: data, mevcut_rol: val };
+  }
+
+  /**
+   * Mevcut role gore yatay gecis onerileri (2-4).
+   * Eslesme yok / hata → suggestions=[] (UI bolumu gizlenir).
+   */
+  async function fetchYatayGecis(mevcutRol) {
+    const rol = String(mevcutRol || "").trim();
+    if (rol.length < 2) return { ok: true, suggestions: [] };
+    try {
+      const r = await fetch("/api/yatay-gecis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mevcut_rol: rol }),
+      });
+      let data = null;
+      try { data = await r.json(); } catch (e) { data = null; }
+      if (!data || !data.ok) return { ok: true, suggestions: [] };
+      const list = Array.isArray(data.suggestions) ? data.suggestions : [];
+      const cleaned = list
+        .map((x) => ({
+          hedef_rol: String((x && x.hedef_rol) || "").trim(),
+          gerekce: String((x && x.gerekce) || "").trim(),
+        }))
+        .filter((x) => x.hedef_rol)
+        .slice(0, 4);
+      return {
+        ok: true,
+        suggestions: cleaned.length >= 2 ? cleaned : [],
+        meslek_adi: data.meslek_adi || "",
+      };
+    } catch (e) {
+      console.warn("[CPAuth] fetchYatayGecis:", e && e.message);
+      return { ok: true, suggestions: [] };
+    }
+  }
+
   async function setEmailRemindersOptIn(enabled) {
     const c = await getClient();
     const user = await getUser();
@@ -2071,6 +2124,8 @@
     syncRoadmapProgress,
     stepProgressLabel,
     fetchProfile,
+    saveMevcutRol,
+    fetchYatayGecis,
     setEmailRemindersOptIn,
     statusProgress,
     overallProgress,

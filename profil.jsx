@@ -81,6 +81,26 @@ function ProfilPage() {
   const [checkinHistoryOpen, setCheckinHistoryOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [mevcutRolDraft, setMevcutRolDraft] = useState("");
+  const [yataySuggestions, setYataySuggestions] = useState([]);
+  const [yatayBusy, setYatayBusy] = useState(false);
+
+  async function loadYatayGecis(rol) {
+    const text = String(rol || "").trim();
+    if (text.length < 2) {
+      setYataySuggestions([]);
+      return;
+    }
+    setYatayBusy(true);
+    try {
+      const res = await CPAuth.fetchYatayGecis(text);
+      setYataySuggestions((res && res.suggestions) || []);
+    } catch (e) {
+      setYataySuggestions([]);
+    } finally {
+      setYatayBusy(false);
+    }
+  }
 
   async function loadPlan() {
     const [t, steps, g, cmp, micros, snaps, pack, draft, checkin, history] = await Promise.all([
@@ -141,9 +161,14 @@ function ProfilPage() {
       if (u) {
         const p = await CPAuth.ensureProfile(u);
         if (!alive) return;
-        setProfile(p || (await CPAuth.fetchProfile()));
+        const resolved = p || (await CPAuth.fetchProfile());
         if (!alive) return;
+        setProfile(resolved);
+        const rol = (resolved && resolved.mevcut_rol) || "";
+        setMevcutRolDraft(rol);
         await loadPlan();
+        if (!alive) return;
+        await loadYatayGecis(rol);
       } else {
         setProfile(null);
         setTrainings([]);
@@ -160,6 +185,8 @@ function ProfilPage() {
         setCheckinQ1("");
         setCheckinQ2("");
         setCheckinChoice("");
+        setMevcutRolDraft("");
+        setYataySuggestions([]);
       }
     }
 
@@ -190,6 +217,18 @@ function ProfilPage() {
       setCheckinEditing(true);
     }
   }, [ready, user]);
+
+  async function onSaveMevcutRol() {
+    setBusy(true);
+    const res = await CPAuth.saveMevcutRol(mevcutRolDraft);
+    if (res && res.ok) {
+      if (res.profile) setProfile(res.profile);
+      await loadYatayGecis(res.mevcut_rol || mevcutRolDraft);
+    } else {
+      setYataySuggestions([]);
+    }
+    setBusy(false);
+  }
 
   async function login() {
     try {
@@ -405,6 +444,46 @@ function ProfilPage() {
                 <h3>{S.goalTitle}</h3>
                 <p>{goal}</p>
               </section>
+            ) : null}
+
+            <section className="pf-current-role" aria-label={S.currentRoleTitle}>
+              <h3>{S.currentRoleTitle}</h3>
+              <p className="pf-muted pf-current-role-hint">{S.currentRoleHint}</p>
+              <div className="pf-current-role-row">
+                <input
+                  type="text"
+                  className="pf-current-role-input"
+                  value={mevcutRolDraft}
+                  onChange={(e) => setMevcutRolDraft(e.target.value)}
+                  placeholder={S.currentRolePlaceholder}
+                  disabled={busy || yatayBusy}
+                  maxLength={160}
+                />
+                <button
+                  type="button"
+                  className="pf-btn"
+                  onClick={onSaveMevcutRol}
+                  disabled={busy || yatayBusy}
+                >
+                  {S.currentRoleSave}
+                </button>
+              </div>
+            </section>
+
+            {yataySuggestions.length >= 2 ? (
+              <aside className="pf-explore" aria-label={S.exploreTitle}>
+                <h3>{S.exploreTitle}</h3>
+                <p className="pf-explore-hint">{S.exploreHint}</p>
+                <ul className="pf-explore-list">
+                  {yataySuggestions.map((s, i) => (
+                    <li key={i}>
+                      <strong>{s.hedef_rol}</strong>
+                      {s.gerekce ? <span>{s.gerekce}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+                <p className="pf-explore-note">{S.exploreNote}</p>
+              </aside>
             ) : null}
 
             <section className="pf-compare-summary">
