@@ -11,6 +11,8 @@ Donen:
     job: { title, required_skills, nice_to_have, experience_years, summary },
     fit_score, strong, gaps, items,
     recommendations: [...],
+    kariyer_haritasi_eslesme?,  # eslesen meslek_adi veya null
+    kariyer_haritasi?,          # { meslek_adi, oncul_roller } veya null
     disclaimer
   }
 """
@@ -29,6 +31,11 @@ from http.server import BaseHTTPRequestHandler
 from openai import OpenAI
 from anthropic import Anthropic
 from qdrant_client import QdrantClient
+
+try:
+    from gecis_haritasi import eslestir as kariyer_gecis_haritasi_eslestir
+except ImportError:
+    from api.gecis_haritasi import eslestir as kariyer_gecis_haritasi_eslestir
 
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
 EMBEDDING_MODEL = "text-embedding-3-small"
@@ -458,6 +465,38 @@ Sadece JSON:
     return out
 
 
+def _oncul_roller_ui(eslesme):
+    """UI icin yumusak oncul liste; bos veya gecersizse None."""
+    if not eslesme:
+        return None
+    raw = eslesme.get("oncul_roller") or []
+    if not isinstance(raw, list):
+        return None
+    out = []
+    for item in raw:
+        if len(out) >= 8:
+            break
+        if isinstance(item, dict):
+            ad = str(item.get("rol_adi") or "").strip()[:120]
+            if not ad:
+                continue
+            out.append({
+                "rol_adi": ad,
+                "gerekce": str(item.get("gerekce") or "").strip()[:240],
+            })
+        else:
+            ad = str(item or "").strip()[:120]
+            if ad:
+                out.append({"rol_adi": ad, "gerekce": ""})
+    if not out:
+        return None
+    return {
+        "meslek_adi": str(eslesme.get("meslek_adi") or "").strip()[:160],
+        "oncul_roller": out,
+        "match_score": eslesme.get("score"),
+    }
+
+
 def analyze_job(url, text, profile):
     scrape_ok = True
     scrape_error = ""
@@ -504,6 +543,8 @@ def analyze_job(url, text, profile):
             "gaps": skills[:6],
             "items": items,
             "recommendations": [],
+            "kariyer_haritasi_eslesme": None,
+            "kariyer_haritasi": None,
             "disclaimer": DISCLAIMER,
             "degraded": True,
         }
@@ -532,6 +573,18 @@ def analyze_job(url, text, profile):
         print("[ERROR] analyze recs:", repr(e))
         recs = []
 
+    # Tamamlayici: kariyer_gecis_haritasi (ana analizi degistirmez)
+    # veri_notu dusuk guven → eslestir None doner → ek bolum gosterilmez
+    kariyer_haritasi_eslesme = None
+    kariyer_haritasi = None
+    try:
+        eslesme = kariyer_gecis_haritasi_eslestir(job.get("title") or "", o, q)
+        if eslesme:
+            kariyer_haritasi_eslesme = str(eslesme.get("meslek_adi") or "").strip() or None
+            kariyer_haritasi = _oncul_roller_ui(eslesme)
+    except Exception as e:
+        print("[ERROR] gecis_haritasi job-match:", repr(e))
+
     return {
         "ok": True,
         "scrape_ok": scrape_ok if used_url else True,
@@ -544,6 +597,8 @@ def analyze_job(url, text, profile):
         "gaps": fit["gaps"],
         "items": fit["items"],
         "recommendations": recs,
+        "kariyer_haritasi_eslesme": kariyer_haritasi_eslesme,
+        "kariyer_haritasi": kariyer_haritasi,
         "disclaimer": DISCLAIMER,
     }
 
@@ -638,6 +693,8 @@ class handler(BaseHTTPRequestHandler):
                         "gaps": skills[:6],
                         "items": [{"skill": s, "status": "kismen", "note": ""} for s in skills[:8]],
                         "recommendations": [],
+                        "kariyer_haritasi_eslesme": None,
+                        "kariyer_haritasi": None,
                         "disclaimer": DISCLAIMER,
                         "degraded": True,
                     })

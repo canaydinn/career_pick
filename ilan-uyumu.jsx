@@ -240,6 +240,26 @@ function IlanUyumuPage() {
                   </div>
                 </div>
 
+                {result.kariyer_haritasi
+                  && Array.isArray(result.kariyer_haritasi.oncul_roller)
+                  && result.kariyer_haritasi.oncul_roller.length ? (
+                  <aside className="ju-path-hint" aria-label={S.pathHintTitle}>
+                    <h3>{S.pathHintTitle}</h3>
+                    <p className="ju-path-hint-note">{S.pathHintNote}</p>
+                    {result.kariyer_haritasi.meslek_adi ? (
+                      <p className="ju-path-hint-meslek">{result.kariyer_haritasi.meslek_adi}</p>
+                    ) : null}
+                    <ul className="ju-path-hint-list">
+                      {result.kariyer_haritasi.oncul_roller.map((r, i) => (
+                        <li key={i}>
+                          <strong>{r.rol_adi}</strong>
+                          {r.gerekce ? <span>{r.gerekce}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </aside>
+                ) : null}
+
                 <div className="ju-recs">
                   <h3>{S.recsTitle}</h3>
                   {recCards.length === 0 ? (

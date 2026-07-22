@@ -5,11 +5,15 @@ Statik dosyalar + /api/sohbet + /api/job-match + /api/public-config
 
 import os
 import json
+import sys
 import importlib.util
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PORT = int(os.environ.get("PORT", "8000"))
+API_DIR = os.path.join(ROOT, "api")
+if API_DIR not in sys.path:
+    sys.path.insert(0, API_DIR)
 
 
 def _load_env():

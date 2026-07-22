@@ -42,11 +42,13 @@
     },
     "api/sohbet.py": {
       "memory": 1024,
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "api/gecis_haritasi.py"
     },
     "api/job-match.py": {
       "memory": 1024,
-      "maxDuration": 90
+      "maxDuration": 90,
+      "includeFiles": "api/gecis_haritasi.py"
     }
   },
   "redirects": [

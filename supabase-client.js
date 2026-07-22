@@ -344,7 +344,9 @@
         link: x.link,
       })),
       disclaimer: result.disclaimer || "",
+      kariyer_haritasi: result.kariyer_haritasi || null,
     };
+    const eslesmeAdi = (result.kariyer_haritasi_eslesme || "").trim() || null;
     const { data, error } = await c
       .from("job_matches")
       .insert({
@@ -353,6 +355,7 @@
         job_title: (result.job && result.job.title) || null,
         fit_score: Number(result.fit_score) || 0,
         gaps_json,
+        kariyer_haritasi_eslesme: eslesmeAdi,
       })
       .select()
       .maybeSingle();

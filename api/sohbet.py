@@ -30,6 +30,13 @@ from anthropic import Anthropic
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
+try:
+    from gecis_haritasi import eslestir as _kariyer_gecis_haritasi_eslestir
+    from gecis_haritasi import format_roller as _format_gecis_roller
+except ImportError:  # lokal / alternatif paket yolu
+    from api.gecis_haritasi import eslestir as _kariyer_gecis_haritasi_eslestir
+    from api.gecis_haritasi import format_roller as _format_gecis_roller
+
 EGITIM_COLLECTION  = "edupick_egitimler"
 CAREER_COLLECTION  = "careerpick"
 EMBEDDING_MODEL    = "text-embedding-3-large"
@@ -37,8 +44,6 @@ CLAUDE_MODEL       = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
 EKSIK_ESIGI        = 3.0
 SENARYO_ADETI      = 5
 MAX_FOLLOWUP_TRIES = 1
-# kariyer_gecis_haritasi: cosine benzerlik esigi (gevsek tutulmaz — yanlis meslek riski)
-GECIS_HARITASI_MIN_SCORE = 0.75
 
 MAX_FIELD_LEN  = 4000
 MAX_BODY_LEN   = 60_000
@@ -1108,121 +1113,6 @@ def _bucket_for_training(t):
     if any(k in blob for k in _TEMEL_KW):
         return 0
     return 1  # varsayilan: uygulama
-
-
-def _veri_notu_dusuk_guven(veri_notu):
-    """kariyer_gecis_haritasi kayitlarinda dusuk guven sinyali."""
-    blob = _normalize_tr_text(veri_notu)
-    if not blob:
-        return False
-    markers = (
-        "yetkinlik fallback atamasi",
-        "yetkinlikfallback atamasi",
-        "iliskisiz giris",
-        "tepe seviye",
-    )
-    return any(m in blob for m in markers)
-
-
-def _format_gecis_roller(roller, limit=8):
-    if not isinstance(roller, list):
-        return "(yok)"
-    lines = []
-    for item in roller:
-        if len(lines) >= limit:
-            break
-        if isinstance(item, dict):
-            ad = str(item.get("rol_adi") or "").strip()
-            gerekce = str(item.get("gerekce") or "").strip()
-            if not ad:
-                continue
-            lines.append(f"- {ad}" + (f": {gerekce}" if gerekce else ""))
-        else:
-            ad = str(item or "").strip()
-            if ad:
-                lines.append(f"- {ad}")
-    return "\n".join(lines) if lines else "(yok)"
-
-
-def _kariyer_gecis_haritasi_eslestir(hedef, o, q):
-    """
-    kariyer_hedefi embedding ile Qdrant'ta en yakin meslek_adi.
-    Skor < GECIS_HARITASI_MIN_SCORE ise eslesme yok.
-    veri_notu dusuk guven ise kayit kullanilmaz (fallback'e birakilir).
-
-    Politika (veri_notu): Dusuk guven kayitlari ATLA — Claude'a temkinli dil
-    vermek yerine mevcut yetkinlik/Claude fallback kullanilir. Yanlis meslek
-    eslesmesi yaniltici rota gosterme riski tasidigi icin guvenilmez kayit
-    zorlanmaz.
-    """
-    hedef = str(hedef or "").strip()
-    if not hedef:
-        return None
-
-    res = q.query_points(
-        collection_name=CAREER_COLLECTION,
-        query=_embed(hedef, o),
-        query_filter=Filter(must=[
-            FieldCondition(
-                key="chunk_type",
-                match=MatchValue(value="kariyer_gecis_haritasi"),
-            )
-        ]),
-        limit=3,
-        with_payload=True,
-    )
-    points = list(res.points or [])
-    if not points:
-        return None
-
-    best = None
-    best_score = -1.0
-    for p in points:
-        pl = p.payload or {}
-        try:
-            score = float(getattr(p, "score", None) or 0.0)
-        except (TypeError, ValueError):
-            score = 0.0
-        meslek = str(pl.get("meslek_adi") or "").strip()
-        if not meslek:
-            continue
-        if score > best_score:
-            best_score = score
-            best = pl
-
-    if best is None or best_score < GECIS_HARITASI_MIN_SCORE:
-        print(
-            f"[ROADMAP] gecis_haritasi eslesme yok "
-            f"(best_score={best_score:.3f}, esik={GECIS_HARITASI_MIN_SCORE})"
-        )
-        return None
-
-    veri_notu = str(best.get("veri_notu") or "")
-    if _veri_notu_dusuk_guven(veri_notu):
-        # Politika: dusuk guven kaydi kullanma → caller fallback'e gecer.
-        print(
-            f"[ROADMAP] gecis_haritasi dusuk guven atlandi "
-            f"meslek={best.get('meslek_adi')!r} veri_notu={veri_notu[:120]!r}"
-        )
-        return None
-
-    print(
-        f"[ROADMAP] gecis_haritasi eslesti meslek={best.get('meslek_adi')!r} "
-        f"score={best_score:.3f}"
-    )
-    return {
-        "meslek_adi": str(best.get("meslek_adi") or "").strip(),
-        "aile": str(best.get("aile") or "").strip(),
-        "alt_fonksiyon": str(best.get("alt_fonksiyon") or "").strip(),
-        "kariyer_seviyesi": str(best.get("kariyer_seviyesi") or "").strip(),
-        "egitim": str(best.get("egitim") or "").strip(),
-        "sektor": str(best.get("sektor") or "").strip(),
-        "veri_notu": veri_notu,
-        "oncul_roller": best.get("oncul_roller") if isinstance(best.get("oncul_roller"), list) else [],
-        "ardil_roller": best.get("ardil_roller") if isinstance(best.get("ardil_roller"), list) else [],
-        "yatay_gecisler": best.get("yatay_gecisler"),
-        "score": best_score,
-    }
 
 
 def _yol_haritasi_veriden_uret(hedef, yetkinlikler, trainings, eslesme, a, valid_ids):
