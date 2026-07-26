@@ -318,6 +318,43 @@
 .pf-user { font-size: 14px; font-weight: 600; color: var(--accent-2); margin-bottom: 24px; }
 .pf-muted { color: var(--faint); font-size: 14px; }
 .pf-login-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 28px; text-align: center; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+.pf-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 22px;
+  padding: 4px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.pf-tab {
+  flex: 1 1 0;
+  min-width: max-content;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  padding: 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pf-tab:hover { color: var(--text); }
+.pf-tab.on {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--line);
+}
+.pf-tab-panel { display: flex; flex-direction: column; }
+.pf-hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 22px;
+}
 .pf-overall { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin-bottom: 22px; }
 .pf-overall-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 600; }
 .pf-overall-meta { margin-top: 8px; font-size: 12.5px; color: var(--faint); }

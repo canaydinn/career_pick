@@ -1,6 +1,20 @@
 /* global React, ReactDOM, CP_PROFIL, CPAuth, CPIcon, CPLogo, CPShareCardModal */
 const { useState, useEffect } = React;
 
+const PF_TABS = ["bugun", "yol", "pratik", "kesfet"];
+
+function tabFromHash() {
+  try {
+    const h = String((typeof location !== "undefined" && location.hash) || "")
+      .replace(/^#/, "")
+      .toLowerCase();
+    if (h === "check-in" || h === "pratiker") return "pratik";
+    if (h === "sektor-notlari") return "kesfet";
+    if (PF_TABS.indexOf(h) >= 0) return h;
+  } catch (e) { /* ignore */ }
+  return "bugun";
+}
+
 function statusClass(status) {
   if (status === "tamamlandi") return "done";
   if (status === "devam_ediyor") return "progress";
@@ -81,9 +95,24 @@ function ProfilPage() {
   const [checkinHistoryOpen, setCheckinHistoryOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [planInfo, setPlanInfo] = useState(null);
+  const [billingMsg, setBillingMsg] = useState("");
   const [mevcutRolDraft, setMevcutRolDraft] = useState("");
   const [yataySuggestions, setYataySuggestions] = useState([]);
   const [yatayBusy, setYatayBusy] = useState(false);
+  const [tab, setTab] = useState(tabFromHash);
+
+  function goTab(id) {
+    const next = PF_TABS.indexOf(id) >= 0 ? id : "bugun";
+    setTab(next);
+    try {
+      if (typeof history !== "undefined" && history.replaceState) {
+        history.replaceState(null, "", "#" + next);
+      } else if (typeof location !== "undefined") {
+        location.hash = next;
+      }
+    } catch (e) { /* ignore */ }
+  }
 
   async function loadYatayGecis(rol) {
     const text = String(rol || "").trim();
@@ -103,7 +132,7 @@ function ProfilPage() {
   }
 
   async function loadPlan() {
-    const [t, steps, g, cmp, micros, snaps, pack, draft, checkin, history] = await Promise.all([
+    const [t, steps, g, cmp, micros, snaps, pack, draft, checkin, history, usage] = await Promise.all([
       CPAuth.fetchTrainings(),
       CPAuth.fetchActiveRoadmap(),
       CPAuth.fetchCareerGoal(),
@@ -114,6 +143,7 @@ function ProfilPage() {
       CPAuth.fetchActiveChatDraft(),
       CPAuth.fetchWeekCheckin(),
       CPAuth.fetchCheckinHistory(6),
+      CPAuth.fetchUsage().catch(() => null),
     ]);
     setTrainings(t);
     setRoadmap(steps);
@@ -129,6 +159,7 @@ function ProfilPage() {
     setCheckinQ1(checkin ? (checkin.q1_text || "") : "");
     setCheckinQ2(checkin ? (checkin.q2_text || "") : "");
     setCheckinChoice(checkin ? (checkin.q2_choice || "") : "");
+    if (usage && usage.ok) setPlanInfo(usage);
 
     // Opsiyonel kisilestirme — notlar zaten gorunur; cumleler sonra eklenir
     if (pack && pack.notes && pack.notes.length) {
@@ -178,6 +209,8 @@ function ProfilPage() {
         setMicroTasks([]);
         setHasSnapshot(false);
         setSectorPack(null);
+        setMevcutRolDraft("");
+        setYataySuggestions([]);
         setHasDraft(false);
         setWeekCheckin(null);
         setCheckinHistory([]);
@@ -185,8 +218,7 @@ function ProfilPage() {
         setCheckinQ1("");
         setCheckinQ2("");
         setCheckinChoice("");
-        setMevcutRolDraft("");
-        setYataySuggestions([]);
+        setPlanInfo(null);
       }
     }
 
@@ -208,15 +240,54 @@ function ProfilPage() {
   }, []);
 
   useEffect(() => {
-    if (!ready || !user) return;
-    if (typeof location !== "undefined" && location.hash === "#check-in") {
-      const el = document.getElementById("check-in");
-      if (el) {
-        try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { /* ignore */ }
-      }
-      setCheckinEditing(true);
+    function onHash() {
+      setTab(tabFromHash());
     }
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !user) return;
+    const h = tabFromHash();
+    setTab(h);
+    if (h === "pratik" && (typeof location !== "undefined" && location.hash === "#check-in")) {
+      setCheckinEditing(true);
+      // scroll after tab content mounts
+      setTimeout(() => {
+        const el = document.getElementById("check-in");
+        if (el) {
+          try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { /* ignore */ }
+        }
+      }, 50);
+    }
+    try {
+      const p = new URLSearchParams(location.search || "");
+      if (p.get("billing") === "plus") {
+        setBillingMsg(S.billingPlusOk || "Career Pick Plus aktif.");
+        p.delete("billing");
+        const q = p.toString();
+        history.replaceState({}, "", location.pathname + (q ? "?" + q : "") + location.hash);
+        loadPlan();
+      }
+    } catch (e) { /* ignore */ }
   }, [ready, user]);
+
+  async function onCancelPlus() {
+    if (!window.confirm(S.cancelConfirm || "Plus aboneliğini iptal etmek istiyor musun?")) return;
+    setBusy(true);
+    setBillingMsg("");
+    const res = await CPAuth.cancelSubscription();
+    setBusy(false);
+    if (res && res.ok) {
+      setBillingMsg(S.cancelDone || "Abonelik iptal edildi.");
+      await loadPlan();
+      const p = await CPAuth.fetchProfile();
+      if (p) setProfile(p);
+    } else {
+      setBillingMsg((res && (res.message || res.error)) || S.cancelFail || "İptal başarısız.");
+    }
+  }
 
   async function onSaveMevcutRol() {
     setBusy(true);
@@ -390,6 +461,24 @@ function ProfilPage() {
           <h1>{S.title}</h1>
           <p>{S.subtitle}</p>
           {user && name ? <div className="pf-user">{name}</div> : null}
+          {user && planInfo ? (
+            <div className="pw-plan-row">
+              <span className={"pw-badge " + (planInfo.plan === "plus" ? "plus" : "free")}>
+                {planInfo.plan === "plus" ? (S.planPlus || "Plus") : (S.planFree || "Free")}
+              </span>
+              <span className="pw-remaining">
+                {(S.chatsLeft || "Kalan sohbet")}: {typeof planInfo.remaining === "number" ? planInfo.remaining : "—"}
+              </span>
+              {planInfo.plan === "plus" ? (
+                <button type="button" className="pw-cancel-link" onClick={onCancelPlus} disabled={busy}>
+                  {S.cancelPlus || "Aboneliği iptal et"}
+                </button>
+              ) : (
+                <a className="pw-upgrade-link" href="fiyatlandirma.html">{S.upgradePlus || "Plus’a geç"}</a>
+              )}
+            </div>
+          ) : null}
+          {billingMsg ? <p className="pw-billing-msg">{billingMsg}</p> : null}
         </header>
 
         {!ready ? (
@@ -403,19 +492,6 @@ function ProfilPage() {
           </div>
         ) : (
           <React.Fragment>
-            {hasDraft ? (
-              <div className="pf-draft-resume">
-                <p>{S.draftResumeTitle}</p>
-                <a href="kariyer%20sohbet.html?resume=1">{S.draftResumeLink}</a>
-              </div>
-            ) : null}
-
-            <div className="pf-share-row">
-              <button type="button" className="pf-btn" onClick={() => setShareOpen(true)}>
-                {S.shareCardBtn}
-              </button>
-            </div>
-
             {typeof CPShareCardModal === "function" ? (
               <CPShareCardModal
                 open={shareOpen}
@@ -425,374 +501,427 @@ function ProfilPage() {
               />
             ) : null}
 
-            <section className="pf-overall">
-              <div className="pf-overall-row">
-                <span>{S.overall}</span>
-                <strong>{overall}%</strong>
-              </div>
-              <div className="pf-bar"><div className="pf-bar-fill" style={{ width: overall + "%" }} /></div>
-              <div className="pf-overall-meta">
-                {trainings.filter((t) => t.status === "tamamlandi").length} / {trainings.length}
-                {stepInfo ? (
-                  <span className="pf-step-meta"> · {S.stepProgress}: {stepInfo.label}</span>
-                ) : null}
-              </div>
-            </section>
-
-            {goal ? (
-              <section className="pf-goal">
-                <h3>{S.goalTitle}</h3>
-                <p>{goal}</p>
-              </section>
-            ) : null}
-
-            <section className="pf-current-role" aria-label={S.currentRoleTitle}>
-              <h3>{S.currentRoleTitle}</h3>
-              <p className="pf-muted pf-current-role-hint">{S.currentRoleHint}</p>
-              <div className="pf-current-role-row">
-                <input
-                  type="text"
-                  className="pf-current-role-input"
-                  value={mevcutRolDraft}
-                  onChange={(e) => setMevcutRolDraft(e.target.value)}
-                  placeholder={S.currentRolePlaceholder}
-                  disabled={busy || yatayBusy}
-                  maxLength={160}
-                />
+            <nav className="pf-tabs" aria-label={S.tabAria || "Profil bölümleri"}>
+              {PF_TABS.map((id) => (
                 <button
+                  key={id}
                   type="button"
-                  className="pf-btn"
-                  onClick={onSaveMevcutRol}
-                  disabled={busy || yatayBusy}
+                  className={"pf-tab" + (tab === id ? " on" : "")}
+                  aria-selected={tab === id}
+                  onClick={() => goTab(id)}
                 >
-                  {S.currentRoleSave}
+                  {(S.tabs && S.tabs[id]) || id}
                 </button>
-              </div>
-            </section>
+              ))}
+            </nav>
 
-            {yataySuggestions.length >= 2 ? (
-              <aside className="pf-explore" aria-label={S.exploreTitle}>
-                <h3>{S.exploreTitle}</h3>
-                <p className="pf-explore-hint">{S.exploreHint}</p>
-                <ul className="pf-explore-list">
-                  {yataySuggestions.map((s, i) => (
-                    <li key={i}>
-                      <strong>{s.hedef_rol}</strong>
-                      {s.gerekce ? <span>{s.gerekce}</span> : null}
-                    </li>
-                  ))}
-                </ul>
-                <p className="pf-explore-note">{S.exploreNote}</p>
-              </aside>
-            ) : null}
-
-            <section className="pf-compare-summary">
-              <h3>{S.compareSummaryTitle}</h3>
-              {!skillSummary || skillSummary.empty || (!skillSummary.hasComparison && !skillSummary.isFirst) ? (
-                <p className="pf-muted">{S.compareSummaryNone}</p>
-              ) : skillSummary.isFirst ? (
-                <p className="pf-muted">{S.compareSummaryFirst}</p>
-              ) : (
-                <p>
-                  <span className="up">{skillSummary.improved}</span>
-                  {" · "}
-                  <span className="down">{skillSummary.declined}</span>
-                  {" — "}
-                  {typeof S.compareSummaryText === "function"
-                    ? S.compareSummaryText(skillSummary.improved, skillSummary.declined)
-                    : ""}
-                </p>
-              )}
-            </section>
-
-            <section className="pf-checkin" id="check-in" aria-label={S.checkinTitle}>
-              <h3>{S.checkinTitle}</h3>
-              <p className="pf-muted pf-checkin-hint">{S.checkinHint}</p>
-
-              {!weekCheckin && !checkinEditing ? (
-                <p className="pf-muted">{S.checkinEmpty}</p>
-              ) : null}
-
-              {weekCheckin && !checkinEditing ? (
-                <div className="pf-checkin-card">
-                  <p className="pf-checkin-q1">{weekCheckin.q1_text}</p>
-                  {weekCheckin.q2_text ? (
-                    <p className="pf-checkin-q2">{weekCheckin.q2_text}</p>
-                  ) : null}
-                  {weekCheckin.q2_choice && S.checkinChoices ? (
-                    <span className="pf-checkin-tag">
-                      {S.checkinChoices[weekCheckin.q2_choice] || weekCheckin.q2_choice}
-                    </span>
-                  ) : null}
-                  {weekCheckin.reflection ? (
-                    <p className="pf-checkin-reflection">{weekCheckin.reflection}</p>
-                  ) : null}
-                  <button type="button" className="pf-checkin-edit" onClick={startEditCheckin} disabled={busy}>
-                    {S.checkinEdit}
-                  </button>
-                </div>
-              ) : (
-                <div className="pf-checkin-form">
-                  <label className="pf-checkin-label">
-                    {S.checkinQ1}
-                    <textarea
-                      value={checkinQ1}
-                      onChange={(e) => setCheckinQ1(e.target.value)}
-                      rows={3}
-                      disabled={busy}
-                      maxLength={1000}
-                    />
-                  </label>
-                  <label className="pf-checkin-label">
-                    {S.checkinQ2}
-                    <textarea
-                      value={checkinQ2}
-                      onChange={(e) => setCheckinQ2(e.target.value)}
-                      rows={2}
-                      disabled={busy}
-                      maxLength={500}
-                    />
-                  </label>
-                  <div className="pf-checkin-choices">
-                    <span className="pf-checkin-choice-label">{S.checkinChoiceLabel}</span>
-                    <div className="pf-checkin-choice-row">
-                      {["egitim", "pratik", "basvuru", "belirsiz"].map((key) => (
-                        <button
-                          key={key}
-                          type="button"
-                          className={"pf-checkin-chip" + (checkinChoice === key ? " on" : "")}
-                          disabled={busy}
-                          onClick={() => setCheckinChoice(checkinChoice === key ? "" : key)}
-                        >
-                          {(S.checkinChoices && S.checkinChoices[key]) || key}
-                        </button>
-                      ))}
-                    </div>
+            {tab === "bugun" ? (
+              <div className="pf-tab-panel">
+                {hasDraft ? (
+                  <div className="pf-draft-resume">
+                    <p>{S.draftResumeTitle}</p>
+                    <a href="kariyer%20sohbet.html?resume=1">{S.draftResumeLink}</a>
                   </div>
-                  <div className="pf-checkin-actions">
-                    <button type="button" className="pf-btn" onClick={onSaveCheckin} disabled={busy}>
-                      {S.checkinSave}
-                    </button>
-                    {weekCheckin ? (
-                      <button type="button" className="pf-btn ghost" onClick={cancelEditCheckin} disabled={busy}>
-                        {S.checkinCancel}
-                      </button>
+                ) : null}
+
+                <section className="pf-overall">
+                  <div className="pf-overall-row">
+                    <span>{S.overall}</span>
+                    <strong>{overall}%</strong>
+                  </div>
+                  <div className="pf-bar"><div className="pf-bar-fill" style={{ width: overall + "%" }} /></div>
+                  <div className="pf-overall-meta">
+                    {trainings.filter((t) => t.status === "tamamlandi").length} / {trainings.length}
+                    {stepInfo ? (
+                      <span className="pf-step-meta"> · {S.stepProgress}: {stepInfo.label}</span>
                     ) : null}
                   </div>
-                </div>
-              )}
+                </section>
 
-              <div className="pf-checkin-history">
-                <button
-                  type="button"
-                  className="pf-checkin-history-toggle"
-                  onClick={() => setCheckinHistoryOpen(!checkinHistoryOpen)}
-                  aria-expanded={checkinHistoryOpen}
-                >
-                  {S.checkinHistory}{checkinHistoryOpen ? " ▴" : " ▾"}
-                </button>
-                {checkinHistoryOpen ? (
-                  checkinHistory.length === 0 ? (
-                    <p className="pf-muted">{S.checkinHistoryEmpty}</p>
+                {goal ? (
+                  <section className="pf-goal">
+                    <h3>{S.goalTitle}</h3>
+                    <p>{goal}</p>
+                  </section>
+                ) : null}
+
+                <div className="pf-hub-actions">
+                  {roadmap.length > 0 ? (
+                    <button type="button" className="pf-btn ghost" onClick={() => goTab("yol")}>
+                      {S.goRoadmap || "Yol haritana git"}
+                    </button>
+                  ) : null}
+                  <button type="button" className="pf-btn ghost" onClick={() => goTab("pratik")}>
+                    {S.goPratik || "Pratiklere git"}
+                  </button>
+                  <button type="button" className="pf-btn" onClick={() => setShareOpen(true)}>
+                    {S.shareCardBtn}
+                  </button>
+                </div>
+
+                <section className="pf-week">
+                  <h3>{S.weekTitle}</h3>
+                  {week.activeStep ? (
+                    <div className="pf-week-step">
+                      <strong>{S.weekActiveStep}</strong>{" "}
+                      {week.stepInfo ? week.stepInfo.label : ""} — {week.activeStep.title}
+                    </div>
+                  ) : null}
+                  {week.actions.length === 0 ? (
+                    <p className="pf-muted">{S.weekEmpty}</p>
                   ) : (
-                    <ul className="pf-checkin-history-list">
-                      {checkinHistory.map((h) => (
-                        <li key={h.id || h.week_start}>
-                          <strong>{formatWeekStart(h.week_start)}</strong>
-                          <span>{h.q1_text}</span>
-                          {h.reflection ? <em>{h.reflection}</em> : null}
+                    <ul className="pf-week-list">
+                      {week.actions.map((a) => (
+                        <li key={a.id + a.type}>
+                          <span className={"pf-week-tag " + a.type}>
+                            {a.type === "continue" ? S.weekContinue : S.weekStart}
+                          </span>
+                          <span className="pf-week-name">{a.training.training_name}</span>
+                          <div className="pf-week-actions">
+                            {resolveLink(a.training) ? (
+                              <button type="button" onClick={() => openLink(a.training)} disabled={busy}>{S.openTraining}</button>
+                            ) : null}
+                            {a.type === "start" ? (
+                              <button type="button" onClick={() => onStart(a.id)} disabled={busy}>{S.markStarted}</button>
+                            ) : (
+                              <button type="button" onClick={() => onComplete(a.id)} disabled={busy}>{S.markCompleted}</button>
+                            )}
+                          </div>
                         </li>
                       ))}
                     </ul>
-                  )
-                ) : null}
-              </div>
-            </section>
-
-            {roadmap.length > 0 ? (
-              <section className="pf-roadmap" aria-label={S.roadmapTitle}>
-                <div className="pf-roadmap-head">
-                  <h2>{S.roadmapTitle}</h2>
-                  {stepInfo ? (
-                    <span className="pf-roadmap-badge">{S.stepProgress}: {stepInfo.label}</span>
+                  )}
+                  {week.next ? (
+                    <div className="pf-next">
+                      <strong>{S.nextTitle}:</strong> {week.next.training_name}
+                    </div>
                   ) : null}
-                </div>
-                <ol className="pf-timeline">
-                  {roadmap.map((step) => {
-                    const linked = trainingsByStep[step.id] || [];
-                    const sc = stepStatusClass(step.status);
-                    return (
-                      <li key={step.id} className={"pf-timeline-step " + sc}>
-                        <div className="pf-timeline-marker" aria-hidden="true">
-                          <span className="pf-timeline-num">{step.step_order}</span>
-                        </div>
-                        <div className="pf-timeline-body">
-                          <div className="pf-timeline-top">
-                            <h3>{step.title}</h3>
-                            <span className={"pf-badge step-" + sc}>
-                              {S.stepStatus[step.status] || step.status}
-                            </span>
-                          </div>
-                          {step.description ? <p className="pf-timeline-desc">{step.description}</p> : null}
-                          {linked.length === 0 ? (
-                            <p className="pf-muted pf-no-resource">{S.noResources}</p>
-                          ) : (
-                            <ul className="pf-list pf-step-trainings">
-                              {linked.map((t) => (
-                                <TrainingCard key={t.id} t={t} {...cardProps} />
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </section>
+                </section>
+
+                {roadmap.length === 0 && trainings.length === 0 ? (
+                  <p className="pf-muted">{S.empty}</p>
+                ) : null}
+
+                <section className="pf-reminders">
+                  <div className="pf-reminders-row">
+                    <div>
+                      <h3>{S.remindersTitle}</h3>
+                      <p className="pf-muted">{S.remindersHint}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className={"pf-toggle " + (remindersOn ? "on" : "")}
+                      onClick={toggleReminders}
+                      disabled={busy}
+                      aria-pressed={remindersOn}
+                    >
+                      {remindersOn ? S.remindersOn : S.remindersOff}
+                    </button>
+                  </div>
+                </section>
+              </div>
             ) : null}
 
-            <section className="pf-micro" id="pratiker">
-              <h3>{S.microTitle}</h3>
-              <p className="pf-muted pf-micro-hint">{S.microHint}</p>
-              {!hasSnapshot ? (
-                <p className="pf-muted">{S.microEmptyChat}</p>
-              ) : microTasks.length === 0 ? (
-                <p className="pf-muted">{S.microEmptyWeek}</p>
-              ) : (
-                <ul className="pf-micro-list">
-                  {microTasks.map((m) => {
-                    const done = m.status === "yapildi";
-                    return (
-                      <li key={m.id} className={"pf-micro-item" + (done ? " done" : "")}>
-                        <div className="pf-micro-check" aria-hidden="true">{done ? "✓" : ""}</div>
-                        <div className="pf-micro-body">
-                          <div className="pf-micro-title">{m.title}</div>
-                          {m.description ? <p className="pf-micro-desc">{m.description}</p> : null}
-                          <div className="pf-micro-meta">
-                            {m.yetkinlik_adi ? <span>{m.yetkinlik_adi}</span> : null}
-                            {m.due_hint ? <span>{S.microDue}: {m.due_hint}</span> : null}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          className="pf-micro-btn"
-                          disabled={busy || done}
-                          onClick={() => onMicroDone(m.id)}
-                        >
-                          {done ? S.microDoneLabel : S.microDone}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
+            {tab === "yol" ? (
+              <div className="pf-tab-panel">
+                <section className="pf-compare-summary">
+                  <h3>{S.compareSummaryTitle}</h3>
+                  {!skillSummary || skillSummary.empty || (!skillSummary.hasComparison && !skillSummary.isFirst) ? (
+                    <p className="pf-muted">{S.compareSummaryNone}</p>
+                  ) : skillSummary.isFirst ? (
+                    <p className="pf-muted">{S.compareSummaryFirst}</p>
+                  ) : (
+                    <p>
+                      <span className="up">{skillSummary.improved}</span>
+                      {" · "}
+                      <span className="down">{skillSummary.declined}</span>
+                      {" — "}
+                      {typeof S.compareSummaryText === "function"
+                        ? S.compareSummaryText(skillSummary.improved, skillSummary.declined)
+                        : ""}
+                    </p>
+                  )}
+                </section>
 
-            <section className="pf-sector-notes" id="sektor-notlari" aria-label={S.sectorNotesTitle}>
-              <div className="pf-sector-head">
-                <h2>{S.sectorNotesTitle}</h2>
-                {sectorPack && sectorPack.sector_key ? (
-                  <span className="pf-sector-badge">
-                    {typeof S.sectorNotesSector === "function"
-                      ? S.sectorNotesSector(sectorPack.sector_key)
-                      : sectorPack.sector_key}
-                  </span>
+                {roadmap.length > 0 ? (
+                  <section className="pf-roadmap" aria-label={S.roadmapTitle}>
+                    <div className="pf-roadmap-head">
+                      <h2>{S.roadmapTitle}</h2>
+                      {stepInfo ? (
+                        <span className="pf-roadmap-badge">{S.stepProgress}: {stepInfo.label}</span>
+                      ) : null}
+                    </div>
+                    <ol className="pf-timeline">
+                      {roadmap.map((step) => {
+                        const linked = trainingsByStep[step.id] || [];
+                        const sc = stepStatusClass(step.status);
+                        return (
+                          <li key={step.id} className={"pf-timeline-step " + sc}>
+                            <div className="pf-timeline-marker" aria-hidden="true">
+                              <span className="pf-timeline-num">{step.step_order}</span>
+                            </div>
+                            <div className="pf-timeline-body">
+                              <div className="pf-timeline-top">
+                                <h3>{step.title}</h3>
+                                <span className={"pf-badge step-" + sc}>
+                                  {S.stepStatus[step.status] || step.status}
+                                </span>
+                              </div>
+                              {step.description ? <p className="pf-timeline-desc">{step.description}</p> : null}
+                              {linked.length === 0 ? (
+                                <p className="pf-muted pf-no-resource">{S.noResources}</p>
+                              ) : (
+                                <ul className="pf-list pf-step-trainings">
+                                  {linked.map((t) => (
+                                    <TrainingCard key={t.id} t={t} {...cardProps} />
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </section>
+                ) : (
+                  <p className="pf-muted">{S.empty}</p>
+                )}
+
+                {unassigned.length > 0 ? (
+                  <section className="pf-other">
+                    <h3>{S.otherTrainings}</h3>
+                    <ul className="pf-list">
+                      {unassigned.map((t) => (
+                        <TrainingCard key={t.id} t={t} {...cardProps} />
+                      ))}
+                    </ul>
+                  </section>
                 ) : null}
               </div>
-              <p className="pf-muted pf-sector-hint">{S.sectorNotesHint}</p>
-              {!sectorPack || !sectorPack.notes || sectorPack.notes.length === 0 ? (
-                <p className="pf-muted">{S.sectorNotesEmpty}</p>
-              ) : (
-                <ul className="pf-sector-list">
-                  {sectorPack.notes.map((n) => {
-                    const cta = n.cta_type || "chat";
-                    const href = CPAuth.sectorCtaHref(cta);
-                    const label = (S.sectorCta && S.sectorCta[cta]) || cta;
-                    return (
-                      <li key={n.id || n.slug} className="pf-sector-card">
-                        <h3>{n.title}</h3>
-                        <p className="pf-sector-body">{n.body}</p>
-                        {n.personal_line ? (
-                          <p className="pf-sector-personal">{n.personal_line}</p>
-                        ) : null}
-                        <a className="pf-sector-cta" href={href}>{label}</a>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-
-            <section className="pf-week">
-              <h3>{S.weekTitle}</h3>
-              {week.activeStep ? (
-                <div className="pf-week-step">
-                  <strong>{S.weekActiveStep}</strong>{" "}
-                  {week.stepInfo ? week.stepInfo.label : ""} — {week.activeStep.title}
-                </div>
-              ) : null}
-              {week.actions.length === 0 ? (
-                <p className="pf-muted">{S.weekEmpty}</p>
-              ) : (
-                <ul className="pf-week-list">
-                  {week.actions.map((a) => (
-                    <li key={a.id + a.type}>
-                      <span className={"pf-week-tag " + a.type}>
-                        {a.type === "continue" ? S.weekContinue : S.weekStart}
-                      </span>
-                      <span className="pf-week-name">{a.training.training_name}</span>
-                      <div className="pf-week-actions">
-                        {resolveLink(a.training) ? (
-                          <button type="button" onClick={() => openLink(a.training)} disabled={busy}>{S.openTraining}</button>
-                        ) : null}
-                        {a.type === "start" ? (
-                          <button type="button" onClick={() => onStart(a.id)} disabled={busy}>{S.markStarted}</button>
-                        ) : (
-                          <button type="button" onClick={() => onComplete(a.id)} disabled={busy}>{S.markCompleted}</button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {week.next ? (
-                <div className="pf-next">
-                  <strong>{S.nextTitle}:</strong> {week.next.training_name}
-                </div>
-              ) : null}
-            </section>
-
-            <section className="pf-reminders">
-              <div className="pf-reminders-row">
-                <div>
-                  <h3>{S.remindersTitle}</h3>
-                  <p className="pf-muted">{S.remindersHint}</p>
-                </div>
-                <button
-                  type="button"
-                  className={"pf-toggle " + (remindersOn ? "on" : "")}
-                  onClick={toggleReminders}
-                  disabled={busy}
-                  aria-pressed={remindersOn}
-                >
-                  {remindersOn ? S.remindersOn : S.remindersOff}
-                </button>
-              </div>
-            </section>
-
-            {roadmap.length === 0 && trainings.length === 0 ? (
-              <p className="pf-muted">{S.empty}</p>
             ) : null}
 
-            {unassigned.length > 0 ? (
-              <section className="pf-other">
-                <h3>{S.otherTrainings}</h3>
-                <ul className="pf-list">
-                  {unassigned.map((t) => (
-                    <TrainingCard key={t.id} t={t} {...cardProps} />
-                  ))}
-                </ul>
-              </section>
+            {tab === "pratik" ? (
+              <div className="pf-tab-panel">
+                <section className="pf-checkin" id="check-in" aria-label={S.checkinTitle}>
+                  <h3>{S.checkinTitle}</h3>
+                  <p className="pf-muted pf-checkin-hint">{S.checkinHint}</p>
+
+                  {!weekCheckin && !checkinEditing ? (
+                    <p className="pf-muted">{S.checkinEmpty}</p>
+                  ) : null}
+
+                  {weekCheckin && !checkinEditing ? (
+                    <div className="pf-checkin-card">
+                      <p className="pf-checkin-q1">{weekCheckin.q1_text}</p>
+                      {weekCheckin.q2_text ? (
+                        <p className="pf-checkin-q2">{weekCheckin.q2_text}</p>
+                      ) : null}
+                      {weekCheckin.q2_choice && S.checkinChoices ? (
+                        <span className="pf-checkin-tag">
+                          {S.checkinChoices[weekCheckin.q2_choice] || weekCheckin.q2_choice}
+                        </span>
+                      ) : null}
+                      {weekCheckin.reflection ? (
+                        <p className="pf-checkin-reflection">{weekCheckin.reflection}</p>
+                      ) : null}
+                      <button type="button" className="pf-checkin-edit" onClick={startEditCheckin} disabled={busy}>
+                        {S.checkinEdit}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="pf-checkin-form">
+                      <label className="pf-checkin-label">
+                        {S.checkinQ1}
+                        <textarea
+                          value={checkinQ1}
+                          onChange={(e) => setCheckinQ1(e.target.value)}
+                          rows={3}
+                          disabled={busy}
+                          maxLength={1000}
+                        />
+                      </label>
+                      <label className="pf-checkin-label">
+                        {S.checkinQ2}
+                        <textarea
+                          value={checkinQ2}
+                          onChange={(e) => setCheckinQ2(e.target.value)}
+                          rows={2}
+                          disabled={busy}
+                          maxLength={500}
+                        />
+                      </label>
+                      <div className="pf-checkin-choices">
+                        <span className="pf-checkin-choice-label">{S.checkinChoiceLabel}</span>
+                        <div className="pf-checkin-choice-row">
+                          {["egitim", "pratik", "basvuru", "belirsiz"].map((key) => (
+                            <button
+                              key={key}
+                              type="button"
+                              className={"pf-checkin-chip" + (checkinChoice === key ? " on" : "")}
+                              disabled={busy}
+                              onClick={() => setCheckinChoice(checkinChoice === key ? "" : key)}
+                            >
+                              {(S.checkinChoices && S.checkinChoices[key]) || key}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="pf-checkin-actions">
+                        <button type="button" className="pf-btn" onClick={onSaveCheckin} disabled={busy}>
+                          {S.checkinSave}
+                        </button>
+                        {weekCheckin ? (
+                          <button type="button" className="pf-btn ghost" onClick={cancelEditCheckin} disabled={busy}>
+                            {S.checkinCancel}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pf-checkin-history">
+                    <button
+                      type="button"
+                      className="pf-checkin-history-toggle"
+                      onClick={() => setCheckinHistoryOpen(!checkinHistoryOpen)}
+                      aria-expanded={checkinHistoryOpen}
+                    >
+                      {S.checkinHistory}{checkinHistoryOpen ? " ▴" : " ▾"}
+                    </button>
+                    {checkinHistoryOpen ? (
+                      checkinHistory.length === 0 ? (
+                        <p className="pf-muted">{S.checkinHistoryEmpty}</p>
+                      ) : (
+                        <ul className="pf-checkin-history-list">
+                          {checkinHistory.map((h) => (
+                            <li key={h.id || h.week_start}>
+                              <strong>{formatWeekStart(h.week_start)}</strong>
+                              <span>{h.q1_text}</span>
+                              {h.reflection ? <em>{h.reflection}</em> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="pf-micro" id="pratiker">
+                  <h3>{S.microTitle}</h3>
+                  <p className="pf-muted pf-micro-hint">{S.microHint}</p>
+                  {!hasSnapshot ? (
+                    <p className="pf-muted">{S.microEmptyChat}</p>
+                  ) : microTasks.length === 0 ? (
+                    <p className="pf-muted">{S.microEmptyWeek}</p>
+                  ) : (
+                    <ul className="pf-micro-list">
+                      {microTasks.map((m) => {
+                        const done = m.status === "yapildi";
+                        return (
+                          <li key={m.id} className={"pf-micro-item" + (done ? " done" : "")}>
+                            <div className="pf-micro-check" aria-hidden="true">{done ? "✓" : ""}</div>
+                            <div className="pf-micro-body">
+                              <div className="pf-micro-title">{m.title}</div>
+                              {m.description ? <p className="pf-micro-desc">{m.description}</p> : null}
+                              <div className="pf-micro-meta">
+                                {m.yetkinlik_adi ? <span>{m.yetkinlik_adi}</span> : null}
+                                {m.due_hint ? <span>{S.microDue}: {m.due_hint}</span> : null}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="pf-micro-btn"
+                              disabled={busy || done}
+                              onClick={() => onMicroDone(m.id)}
+                            >
+                              {done ? S.microDoneLabel : S.microDone}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+              </div>
+            ) : null}
+
+            {tab === "kesfet" ? (
+              <div className="pf-tab-panel">
+                <section className="pf-current-role" aria-label={S.currentRoleTitle}>
+                  <h3>{S.currentRoleTitle}</h3>
+                  <p className="pf-muted pf-current-role-hint">{S.currentRoleHint}</p>
+                  <div className="pf-current-role-row">
+                    <input
+                      type="text"
+                      className="pf-current-role-input"
+                      value={mevcutRolDraft}
+                      onChange={(e) => setMevcutRolDraft(e.target.value)}
+                      placeholder={S.currentRolePlaceholder}
+                      disabled={busy || yatayBusy}
+                      maxLength={160}
+                    />
+                    <button
+                      type="button"
+                      className="pf-btn"
+                      onClick={onSaveMevcutRol}
+                      disabled={busy || yatayBusy}
+                    >
+                      {S.currentRoleSave}
+                    </button>
+                  </div>
+                </section>
+
+                {yataySuggestions.length >= 2 ? (
+                  <aside className="pf-explore" aria-label={S.exploreTitle}>
+                    <h3>{S.exploreTitle}</h3>
+                    <p className="pf-explore-hint">{S.exploreHint}</p>
+                    <ul className="pf-explore-list">
+                      {yataySuggestions.map((s, i) => (
+                        <li key={i}>
+                          <strong>{s.hedef_rol}</strong>
+                          {s.gerekce ? <span>{s.gerekce}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="pf-explore-note">{S.exploreNote}</p>
+                  </aside>
+                ) : null}
+
+                <section className="pf-sector-notes" id="sektor-notlari" aria-label={S.sectorNotesTitle}>
+                  <div className="pf-sector-head">
+                    <h2>{S.sectorNotesTitle}</h2>
+                    {sectorPack && sectorPack.sector_key ? (
+                      <span className="pf-sector-badge">
+                        {typeof S.sectorNotesSector === "function"
+                          ? S.sectorNotesSector(sectorPack.sector_key)
+                          : sectorPack.sector_key}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="pf-muted pf-sector-hint">{S.sectorNotesHint}</p>
+                  {!sectorPack || !sectorPack.notes || sectorPack.notes.length === 0 ? (
+                    <p className="pf-muted">{S.sectorNotesEmpty}</p>
+                  ) : (
+                    <ul className="pf-sector-list">
+                      {sectorPack.notes.map((n) => {
+                        const cta = n.cta_type || "chat";
+                        const href = CPAuth.sectorCtaHref(cta);
+                        const label = (S.sectorCta && S.sectorCta[cta]) || cta;
+                        return (
+                          <li key={n.id || n.slug} className="pf-sector-card">
+                            <h3>{n.title}</h3>
+                            <p className="pf-sector-body">{n.body}</p>
+                            {n.personal_line ? (
+                              <p className="pf-sector-personal">{n.personal_line}</p>
+                            ) : null}
+                            <a className="pf-sector-cta" href={href}>{label}</a>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+              </div>
             ) : null}
           </React.Fragment>
         )}
