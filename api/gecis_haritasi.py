@@ -11,8 +11,10 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 CAREER_COLLECTION = "careerpick"
 EMBEDDING_MODEL = "text-embedding-3-large"
-# Cosine benzerlik esigi (gevsek tutulmaz — yanlis meslek riski)
-GECIS_HARITASI_MIN_SCORE = 0.75
+# Cosine benzerlik esigi (gevsek tutulmaz — yanlis meslek riski).
+# 0.75 pratikte hic eslesme vermedi: birebir meslek adlari ~0.48–0.70,
+# gurultu ~0.23. 0.55 gercek meslekleri alir, alakasiz metni disarida birakir.
+GECIS_HARITASI_MIN_SCORE = 0.55
 
 
 def _normalize_tr_text(text):
