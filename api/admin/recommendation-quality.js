@@ -47,7 +47,15 @@ async function requireAdmin(token) {
   }
 
   const db = adminDb();
-  if (!db) return { ok: false, status: 503, error: "Service role eksik" };
+  if (!db) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Service role eksik",
+      message:
+        "Vercel'e SUPABASE_SERVICE_ROLE_KEY ekle (Production). Supabase → Project Settings → API → service_role (secret). Frontend'e koyma.",
+    };
+  }
 
   const { data: profile } = await db
     .from("profiles")

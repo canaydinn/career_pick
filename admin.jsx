@@ -272,7 +272,9 @@ function AdminApp() {
       });
       const json = await r.json();
       if (!r.ok || !json.ok) {
-        throw new Error((json && json.error) || ("HTTP " + r.status));
+        throw new Error(
+          (json && (json.message || json.error)) || ("HTTP " + r.status)
+        );
       }
       setData(json);
     } catch (e) {
