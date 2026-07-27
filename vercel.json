@@ -30,6 +30,10 @@
       "maxDuration": 90,
       "includeFiles": "api/gecis_haritasi.py"
     },
+    "api/cv-gap.py": {
+      "memory": 1024,
+      "maxDuration": 90
+    },
     "api/yatay-gecis.py": {
       "memory": 512,
       "maxDuration": 30,

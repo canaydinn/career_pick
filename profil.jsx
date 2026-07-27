@@ -686,6 +686,9 @@ function ProfilPage() {
                         {S.hubCtaPath || "Yolum"}
                       </a>
                     ) : null}
+                    <a className="pf-btn ghost" href="cv-bosluk.html">
+                      {S.hubCtaCv || "CV analizi"}
+                    </a>
                     {hasDraft || primaryWeekAction ? (
                       <a className="pf-btn ghost" href="kariyer%20sohbet.html">
                         {S.hubCtaChat || S.chatBtn}

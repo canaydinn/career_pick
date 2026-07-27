@@ -1,4 +1,4 @@
-/* global React, ReactDOM, CP_ILAN, CPAuth, CPLogo */
+/* global React, ReactDOM, CP_CVGAP, CPAuth, CPLogo */
 const { useState, useEffect } = React;
 
 function statusClass(status) {
@@ -7,16 +7,30 @@ function statusClass(status) {
   return "missing";
 }
 
-function IlanUyumuPage() {
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result || "");
+      const i = s.indexOf(",");
+      resolve(i >= 0 ? s.slice(i + 1) : s);
+    };
+    reader.onerror = () => reject(reader.error || new Error("read"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function CvBoslukPage() {
   const lang = (typeof localStorage !== "undefined" && localStorage.getItem("cp_lang")) === "en" ? "en" : "tr";
-  const S = CP_ILAN[lang];
+  const S = CP_CVGAP[lang];
 
   const [ready, setReady] = useState(false);
   const [configured, setConfigured] = useState(true);
   const [user, setUser] = useState(null);
-  const [url, setUrl] = useState("");
-  const [text, setText] = useState("");
-  const [showPaste, setShowPaste] = useState(true);
+  const [targetRole, setTargetRole] = useState("");
+  const [cvText, setCvText] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [fileB64, setFileB64] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
@@ -38,13 +52,20 @@ function IlanUyumuPage() {
       const u = await CPAuth.getUser();
       if (!alive) return;
       setUser(u);
-      if (u) setTrainings(await CPAuth.fetchTrainings());
+      if (u) {
+        setTrainings(await CPAuth.fetchTrainings());
+        const goal = await CPAuth.fetchCareerGoal();
+        if (goal) setTargetRole(goal);
+      }
       setReady(true);
       off = CPAuth.onAuthStateChange(async (nu) => {
         if (!alive) return;
         setUser(nu);
-        if (nu) setTrainings(await CPAuth.fetchTrainings());
-        else {
+        if (nu) {
+          setTrainings(await CPAuth.fetchTrainings());
+          const goal = await CPAuth.fetchCareerGoal();
+          if (goal) setTargetRole(goal);
+        } else {
           setTrainings([]);
           setResult(null);
         }
@@ -55,10 +76,35 @@ function IlanUyumuPage() {
 
   async function login() {
     try {
-      sessionStorage.setItem("cp_auth_next", "ilan-uyumu.html");
+      sessionStorage.setItem("cp_auth_next", "cv-bosluk.html");
       await CPAuth.signInWithGoogle(location.origin + "/auth-callback.html");
     } catch (e) {
       alert(e.message || S.notConfigured);
+    }
+  }
+
+  async function onFile(e) {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    setError("");
+    setFileName(f.name || "");
+    setFileB64("");
+    try {
+      if (f.size > 1.2 * 1024 * 1024) {
+        setError(S.fileFail);
+        return;
+      }
+      const name = (f.name || "").toLowerCase();
+      if (name.endsWith(".txt") || name.endsWith(".md") || (f.type || "").startsWith("text/")) {
+        const text = await f.text();
+        setCvText(text);
+        setFileB64("");
+      } else {
+        const b64 = await fileToBase64(f);
+        setFileB64(b64);
+      }
+    } catch (err) {
+      setError(S.fileFail);
     }
   }
 
@@ -81,27 +127,35 @@ function IlanUyumuPage() {
     if (!user || busy) return;
     setError("");
     setSavedMsg("");
+    if (!cvText.trim() && !fileB64) {
+      setError(S.needCv);
+      return;
+    }
+    if (!targetRole.trim() || targetRole.trim().length < 2) {
+      setError(S.needRole);
+      return;
+    }
     setBusy(true);
     try {
-      const data = await CPAuth.analyzeJobMatch({ url: url.trim(), text: text.trim() });
+      const data = await CPAuth.analyzeCvGap({
+        cvText: fileB64 ? "" : cvText.trim(),
+        cvBase64: fileB64 || "",
+        cvFilename: fileName || "",
+        targetRole: targetRole.trim(),
+      });
       if (!data.ok) {
         setResult(null);
-        setError(data.error || S.scrapeFail);
-        if (data.need_paste || data.scrape_ok === false) setShowPaste(true);
+        setError(data.error || S.fileFail);
         return;
       }
-      if (data.scrape_ok === false && data.scrape_error) {
-        setShowPaste(true);
-      }
       setResult(data);
-      const saved = await CPAuth.saveJobMatch(data);
+      const saved = await CPAuth.saveCvGap(data);
       if (saved.ok) {
         setSavedMsg(S.saved);
         setTrainings(await CPAuth.fetchTrainings());
       }
     } catch (err) {
-      setError(err.message || S.scrapeFail);
-      setShowPaste(true);
+      setError(err.message || S.fileFail);
     } finally {
       setBusy(false);
     }
@@ -123,6 +177,7 @@ function IlanUyumuPage() {
 
   const recCards = (result && result.recommendations) || [];
   const fit = result ? Math.round(Number(result.fit_score) || 0) : 0;
+  const canSubmit = !busy && (!!cvText.trim() || !!fileB64) && targetRole.trim().length >= 2;
 
   return (
     <div className="pf-page ju-page">
@@ -130,7 +185,7 @@ function IlanUyumuPage() {
         <a href="index.html" aria-label={S.brand} style={{ display: "inline-flex" }}><CPLogo /></a>
         <div className="pf-top-actions">
           <a className="pf-link" href="profil.html">{S.profileBtn}</a>
-          <a className="pf-link" href="cv-bosluk.html">{S.cvGapBtn || "CV analizi"}</a>
+          <a className="pf-link" href="ilan-uyumu.html">{S.jobFitBtn}</a>
           <a className="pf-link" href="kariyer%20sohbet.html">{S.chatBtn}</a>
           {user ? (
             <button className="pf-btn ghost" onClick={() => CPAuth.signOut()}>{S.logoutBtn}</button>
@@ -160,40 +215,46 @@ function IlanUyumuPage() {
           <React.Fragment>
             <form className="ju-form" onSubmit={onAnalyze}>
               <label className="ju-label">
-                {S.urlLabel}
+                {S.roleLabel}
                 <input
-                  type="url"
+                  type="text"
                   className="ju-input"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder={S.urlPlaceholder}
+                  value={targetRole}
+                  onChange={(e) => setTargetRole(e.target.value)}
+                  placeholder={S.rolePlaceholder}
+                  disabled={busy}
+                  maxLength={160}
+                />
+                <span className="pf-muted" style={{ fontWeight: 500 }}>{S.roleHint}</span>
+              </label>
+
+              <label className="ju-label">
+                {S.fileLabel}
+                <input
+                  type="file"
+                  className="ju-input"
+                  accept=".pdf,.txt,.md,text/plain,application/pdf"
+                  onChange={onFile}
+                  disabled={busy}
+                />
+                <span className="pf-muted" style={{ fontWeight: 500 }}>
+                  {fileName ? fileName : S.fileHint}
+                </span>
+              </label>
+
+              <label className="ju-label">
+                {S.pasteLabel}
+                <textarea
+                  className="ju-textarea"
+                  rows={10}
+                  value={cvText}
+                  onChange={(e) => setCvText(e.target.value)}
+                  placeholder={S.pastePlaceholder}
                   disabled={busy}
                 />
               </label>
 
-              <button
-                type="button"
-                className="ju-paste-toggle"
-                onClick={() => setShowPaste((v) => !v)}
-              >
-                {S.pasteToggle}
-              </button>
-
-              {showPaste ? (
-                <label className="ju-label">
-                  {S.pasteLabel}
-                  <textarea
-                    className="ju-textarea"
-                    rows={8}
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    placeholder={S.pastePlaceholder}
-                    disabled={busy}
-                  />
-                </label>
-              ) : null}
-
-              <button type="submit" className="pf-btn ju-submit" disabled={busy || (!url.trim() && !text.trim())}>
+              <button type="submit" className="pf-btn ju-submit" disabled={!canSubmit}>
                 {busy ? S.analyzing : S.analyzeBtn}
               </button>
             </form>
@@ -205,14 +266,19 @@ function IlanUyumuPage() {
               <section className="ju-result">
                 <div className="ju-score-block">
                   <h2>{S.scoreTitle}</h2>
-                  {result.job && result.job.title ? (
-                    <p className="ju-job-title">{result.job.title}</p>
-                  ) : null}
+                  <p className="ju-job-title">{result.target_role}</p>
                   <div className="ju-score-ring" style={{ "--pct": fit }}>
                     <strong>{fit}%</strong>
                   </div>
                   <p className="pf-muted ju-score-note">{result.disclaimer || S.disclaimer}</p>
                 </div>
+
+                {result.cv && result.cv.summary ? (
+                  <div className="ju-tags">
+                    <h3>{S.cvSummaryTitle}</h3>
+                    <p className="pf-muted" style={{ margin: 0, lineHeight: 1.45 }}>{result.cv.summary}</p>
+                  </div>
+                ) : null}
 
                 <div className="ju-tags-row">
                   <div className="ju-tags">
@@ -241,26 +307,6 @@ function IlanUyumuPage() {
                   </div>
                 </div>
 
-                {result.kariyer_haritasi
-                  && Array.isArray(result.kariyer_haritasi.oncul_roller)
-                  && result.kariyer_haritasi.oncul_roller.length ? (
-                  <aside className="ju-path-hint" aria-label={S.pathHintTitle}>
-                    <h3>{S.pathHintTitle}</h3>
-                    <p className="ju-path-hint-note">{S.pathHintNote}</p>
-                    {result.kariyer_haritasi.meslek_adi ? (
-                      <p className="ju-path-hint-meslek">{result.kariyer_haritasi.meslek_adi}</p>
-                    ) : null}
-                    <ul className="ju-path-hint-list">
-                      {result.kariyer_haritasi.oncul_roller.map((r, i) => (
-                        <li key={i}>
-                          <strong>{r.rol_adi}</strong>
-                          {r.gerekce ? <span>{r.gerekce}</span> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </aside>
-                ) : null}
-
                 <div className="ju-recs">
                   <h3>{S.recsTitle}</h3>
                   {recCards.length === 0 ? (
@@ -268,42 +314,35 @@ function IlanUyumuPage() {
                   ) : (
                     <ul className="pf-list">
                       {recCards.map((r, i) => {
-                        const tid = r.link || r.ad;
-                        const row = trainings.find((t) => t.training_id === tid || t.training_name === r.ad);
-                        const st = row ? row.status : "eksik";
+                        const linked = trainings.find((t) =>
+                          (t.training_name || "") === r.ad || (t.link || "") === (r.link || "")
+                        );
+                        const st = linked ? linked.status : "eksik";
                         return (
-                          <li className={"pf-item " + statusClass(st)} key={i}>
+                          <li key={i} className={"pf-item " + statusClass(st)}>
                             <div className="pf-item-top">
                               <h3>{r.ad}</h3>
                               <span className={"pf-badge " + statusClass(st)}>
                                 {S.status[st] || st}
                               </span>
                             </div>
-                            {r.kurum ? <div className="pf-item-meta">{r.kurum}</div> : null}
                             {r.gerekce ? <p className="ju-gerekce">{r.gerekce}</p> : null}
                             <div className="pf-item-actions">
-                              <button
-                                type="button"
-                                className="primary"
-                                disabled={busy || !resolveLink({ link: r.link, training_id: tid })}
-                                onClick={() => openLink({ link: r.link, training_id: tid })}
-                              >
-                                {S.openTraining}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy || !row || st === "devam_ediyor"}
-                                onClick={() => row && onStart(row.id)}
-                              >
-                                {S.markStarted}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy || !row || st === "tamamlandi"}
-                                onClick={() => row && onComplete(row.id)}
-                              >
-                                {S.markCompleted}
-                              </button>
+                              {resolveLink(linked || { link: r.link }) ? (
+                                <button type="button" className="primary" onClick={() => openLink(linked || { link: r.link })}>
+                                  {S.openTraining}
+                                </button>
+                              ) : null}
+                              {linked ? (
+                                <React.Fragment>
+                                  <button type="button" disabled={busy || st === "devam_ediyor"} onClick={() => onStart(linked.id)}>
+                                    {S.markStarted}
+                                  </button>
+                                  <button type="button" disabled={busy || st === "tamamlandi"} onClick={() => onComplete(linked.id)}>
+                                    {S.markCompleted}
+                                  </button>
+                                </React.Fragment>
+                              ) : null}
                             </div>
                           </li>
                         );
@@ -320,4 +359,4 @@ function IlanUyumuPage() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<IlanUyumuPage />);
+ReactDOM.createRoot(document.getElementById("root")).render(<CvBoslukPage />);

@@ -329,6 +329,71 @@
     return data;
   }
 
+  async function analyzeCvGap({ cvText, cvBase64, cvFilename, targetRole }) {
+    const profile = await buildJobMatchProfile();
+    const r = await fetch("/api/cv-gap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cv_text: cvText || "",
+        cv_base64: cvBase64 || "",
+        cv_filename: cvFilename || "",
+        target_role: targetRole || "",
+        profile,
+      }),
+    });
+    let data = null;
+    try { data = await r.json(); } catch (e) { data = null; }
+    if (!data) return { ok: false, error: "Yanit okunamadi" };
+    return data;
+  }
+
+  async function saveCvGap(result) {
+    const c = await getClient();
+    const user = await getUser();
+    if (!c || !user || !result) return { ok: false };
+    const gaps_json = {
+      strong: result.strong || [],
+      gaps: result.gaps || [],
+      items: result.items || [],
+      cv: result.cv || {},
+      recommendations: (result.recommendations || []).map((x) => ({
+        ad: x.ad,
+        gerekce: x.gerekce,
+        link: x.link,
+      })),
+      disclaimer: result.disclaimer || "",
+    };
+    const { data, error } = await c
+      .from("cv_gap_analyses")
+      .insert({
+        user_id: user.id,
+        target_role: (result.target_role || "").trim().slice(0, 200) || "hedef",
+        fit_score: Number(result.fit_score) || 0,
+        gaps_json,
+      })
+      .select()
+      .maybeSingle();
+    if (error) {
+      console.warn("[CPAuth] saveCvGap:", error.message);
+      return { ok: false, reason: error.message };
+    }
+
+    const recs = result.recommendations || [];
+    if (recs.length) {
+      await saveRecommendations(recs.map((r) => ({
+        training_id: r.link || r.ad,
+        training_name: r.ad,
+        link: r.link || "",
+        status: "eksik",
+        source: "cv_gap",
+        gerekce: r.gerekce || "",
+        is_placeholder: !!r.is_placeholder,
+      })));
+    }
+    return { ok: true, analysis: data };
+  }
+
   async function saveJobMatch(result) {
     const c = await getClient();
     const user = await getUser();
@@ -2181,6 +2246,8 @@
     buildJobMatchProfile,
     analyzeJobMatch,
     saveJobMatch,
+    analyzeCvGap,
+    saveCvGap,
     fetchLatestJobMatch,
     buildShareCardPayload,
     shareCardLinkedInText,

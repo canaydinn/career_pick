@@ -1,6 +1,6 @@
 """
 CareerPick — Lokal onizleme sunucusu
-Statik dosyalar + /api/sohbet + /api/job-match + /api/public-config
+Statik dosyalar + /api/sohbet + /api/job-match + /api/cv-gap + /api/public-config
 """
 
 import os
@@ -42,6 +42,7 @@ def _load(modname, filename):
 
 sohbet = _load("sohbet", "sohbet.py")
 job_match = _load("job_match", "job-match.py")
+cv_gap = _load("cv_gap", "cv-gap.py")
 yatay_gecis = _load("yatay_gecis", "yatay-gecis.py")
 
 
@@ -102,6 +103,37 @@ class DevHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 import traceback; traceback.print_exc()
                 return self._json(503, {"ok": False, "error": f"AI hata: {e}", "need_paste": True})
+
+        if path == "/api/cv-gap":
+            try:
+                print("[REQ] cv-gap")
+                cv_text = (data.get("cv_text") or "").strip()
+                b64 = (data.get("cv_base64") or "").strip()
+                filename = (data.get("cv_filename") or "").lower()
+                if not cv_text and b64:
+                    try:
+                        is_pdf = filename.endswith(".pdf") or b64.startswith("JVBERi0")
+                        if is_pdf:
+                            cv_text = cv_gap.extract_pdf_text(b64)
+                        else:
+                            import base64
+                            raw = base64.b64decode(b64, validate=False)
+                            cv_text = raw.decode("utf-8", errors="ignore").strip()
+                    except Exception as e:
+                        return self._json(422, {"ok": False, "error": str(e) or "Dosya okunamadi."})
+                target_role = (data.get("target_role") or "").strip()
+                profile = data.get("profile") if isinstance(data.get("profile"), dict) else {}
+                if len(target_role) < 2:
+                    for ans in (profile.get("answers") or []):
+                        if isinstance(ans, dict) and ans.get("question_id") == "kariyer_hedefi":
+                            target_role = str(ans.get("answer_text") or "").strip()
+                            if target_role:
+                                break
+                result = cv_gap.analyze_cv_gap(cv_text, target_role, profile)
+                return self._json(200 if result.get("ok") else 422, result)
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                return self._json(503, {"ok": False, "error": f"AI hata: {e}"})
 
         if path == "/api/yatay-gecis":
             try:
