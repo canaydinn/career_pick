@@ -539,6 +539,31 @@ function ProfilPage() {
     : (S.loopCheckinTodo || "Check-in yap");
   const loopLine = loopMicroText + " · " + loopCheckinText;
 
+  const firstName = (name || "").trim().split(/\s+/)[0] || "";
+  const hubHello = firstName
+    ? (typeof S.hubHelloNamed === "function" ? S.hubHelloNamed(firstName) : ("Merhaba, " + firstName))
+    : (S.hubHello || "Merhaba");
+
+  let hubStatus = S.hubStatusEmpty || S.empty;
+  if (hasDraft) {
+    hubStatus = S.hubStatusDraft || S.draftResumeTitle;
+  } else if (week.activeStep) {
+    const stepLabel = week.stepInfo ? week.stepInfo.label : "";
+    const stepTitle = week.activeStep.title || "";
+    hubStatus = typeof S.hubStatusStep === "function"
+      ? S.hubStatusStep(stepLabel, stepTitle)
+      : ((S.weekActiveStep || "Aktif adımın:") + " " + stepLabel + (stepTitle ? (" — " + stepTitle) : ""));
+  } else if (goal) {
+    hubStatus = typeof S.hubStatusGoal === "function" ? S.hubStatusGoal(goal) : goal;
+  } else if (roadmap.length === 0 && trainings.length === 0) {
+    hubStatus = S.hubStatusStart || S.empty;
+  } else if (week.actions.length === 0) {
+    hubStatus = S.hubStatusClear || S.weekEmpty;
+  }
+
+  const primaryWeekAction = week.actions && week.actions.length ? week.actions[0] : null;
+  const weekPreview = (week.actions || []).slice(0, 3);
+
   return (
     <div className="pf-page">
       <div className="pf-top">
@@ -555,26 +580,30 @@ function ProfilPage() {
       </div>
 
       <div className="pf-shell">
-        <header className="pf-head">
-          <h1>{headTitle}</h1>
-          <p>{headSub}</p>
-          {user && name ? <div className="pf-user">{name}</div> : null}
-          {user && planInfo ? (
-            <div className="pw-plan-row">
-              <span className={"pw-badge " + (planInfo.plan === "plus" ? "plus" : "free")}>
-                {planInfo.plan === "plus" ? (S.planPlus || "Plus") : (S.planFree || "Free")}
-              </span>
-              <span className="pw-remaining">
-                {(S.chatsLeft || "Kalan sohbet")}: {typeof planInfo.remaining === "number" ? planInfo.remaining : "—"}
-              </span>
-              {planInfo.plan === "plus" ? (
-                <button type="button" className="pw-cancel-link" onClick={onCancelPlus} disabled={busy}>
-                  {S.cancelPlus || "Aboneliği iptal et"}
-                </button>
-              ) : (
-                <a className="pw-upgrade-link" href="fiyatlandirma.html">{S.upgradePlus || "Plus’a geç"}</a>
-              )}
-            </div>
+        <header className={"pf-head" + (page === "bugun" ? " hub" : "")}>
+          {page !== "bugun" ? (
+            <React.Fragment>
+              <h1>{headTitle}</h1>
+              <p>{headSub}</p>
+              {user && name ? <div className="pf-user">{name}</div> : null}
+              {user && planInfo ? (
+                <div className="pw-plan-row">
+                  <span className={"pw-badge " + (planInfo.plan === "plus" ? "plus" : "free")}>
+                    {planInfo.plan === "plus" ? (S.planPlus || "Plus") : (S.planFree || "Free")}
+                  </span>
+                  <span className="pw-remaining">
+                    {(S.chatsLeft || "Kalan sohbet")}: {typeof planInfo.remaining === "number" ? planInfo.remaining : "—"}
+                  </span>
+                  {planInfo.plan === "plus" ? (
+                    <button type="button" className="pw-cancel-link" onClick={onCancelPlus} disabled={busy}>
+                      {S.cancelPlus || "Aboneliği iptal et"}
+                    </button>
+                  ) : (
+                    <a className="pw-upgrade-link" href="fiyatlandirma.html">{S.upgradePlus || "Plus’a geç"}</a>
+                  )}
+                </div>
+              ) : null}
+            </React.Fragment>
           ) : null}
           {billingMsg ? <p className="pw-billing-msg">{billingMsg}</p> : null}
         </header>
@@ -613,67 +642,60 @@ function ProfilPage() {
             </nav>
 
             {page === "bugun" ? (
-              <div className="pf-tab-panel">
-                {hasDraft ? (
-                  <div className="pf-draft-resume">
-                    <p>{S.draftResumeTitle}</p>
-                    <a href="kariyer%20sohbet.html?resume=1">{S.draftResumeLink}</a>
-                  </div>
-                ) : null}
+              <div className="pf-tab-panel pf-hub">
+                <section className="pf-hub-hero" aria-label={S.pageTitle && S.pageTitle.bugun}>
+                  <p className="pf-hub-brand">{S.brand}</p>
+                  <h1 className="pf-hub-hello">{hubHello}</h1>
+                  <p className="pf-hub-status">{hubStatus}</p>
 
-                <section className="pf-overall">
-                  <div className="pf-overall-row">
-                    <span>{S.overall}</span>
-                    <strong>{overall}%</strong>
+                  <div className="pf-hub-progress" aria-label={S.overall}>
+                    <div className="pf-bar"><div className="pf-bar-fill" style={{ width: overall + "%" }} /></div>
+                    <span className="pf-hub-pct">{overall}%</span>
                   </div>
-                  <div className="pf-bar"><div className="pf-bar-fill" style={{ width: overall + "%" }} /></div>
-                  <div className="pf-overall-meta">
-                    {trainings.filter((t) => t.status === "tamamlandi").length} / {trainings.length}
-                    {stepInfo ? (
-                      <span className="pf-step-meta"> · {S.stepProgress}: {stepInfo.label}</span>
+
+                  <div className="pf-hub-cta">
+                    {hasDraft ? (
+                      <a className="pf-btn" href="kariyer%20sohbet.html?resume=1">
+                        {S.hubCtaResume || S.draftResumeLink || "Devam et"}
+                      </a>
+                    ) : primaryWeekAction ? (
+                      primaryWeekAction.type === "start" ? (
+                        <button type="button" className="pf-btn" onClick={() => onStart(primaryWeekAction.id)} disabled={busy}>
+                          {S.hubCtaStart || S.markStarted}
+                        </button>
+                      ) : (
+                        <button type="button" className="pf-btn" onClick={() => onComplete(primaryWeekAction.id)} disabled={busy}>
+                          {S.hubCtaContinue || S.weekContinue}
+                        </button>
+                      )
+                    ) : (
+                      <a className="pf-btn" href="kariyer%20sohbet.html">
+                        {S.hubCtaChat || S.chatBtn}
+                      </a>
+                    )}
+                    {roadmap.length > 0 ? (
+                      <a className="pf-btn ghost" href={PF_HREF.yol}>
+                        {S.hubCtaPath || "Yolum"}
+                      </a>
+                    ) : null}
+                    {hasDraft || primaryWeekAction ? (
+                      <a className="pf-btn ghost" href="kariyer%20sohbet.html">
+                        {S.hubCtaChat || S.chatBtn}
+                      </a>
                     ) : null}
                   </div>
                 </section>
 
-                {goal ? (
-                  <section className="pf-goal">
-                    <h3>{S.goalTitle}</h3>
-                    <p>{goal}</p>
-                  </section>
-                ) : null}
-
-                <a className="pf-loop" href={PF_HREF.pratik} aria-label={S.loopAria || "Pratik döngüsü"}>
-                  <span className="pf-loop-main">{loopLine}</span>
-                  <span className="pf-loop-go">{S.loopGo || "Pratiklere git"}</span>
-                </a>
-
-                <div className="pf-hub-actions">
-                  {roadmap.length > 0 ? (
-                    <a className="pf-btn ghost" href={PF_HREF.yol}>
-                      {S.goRoadmap || "Yol haritana git"}
-                    </a>
-                  ) : null}
-                  <a className="pf-btn ghost" href={PF_HREF.pratik}>
-                    {S.goPratik || "Pratiklere git"}
-                  </a>
-                  <button type="button" className="pf-btn" onClick={() => setShareOpen(true)}>
-                    {S.shareCardBtn}
-                  </button>
-                </div>
-
-                <section className="pf-week">
-                  <h3>{S.weekTitle}</h3>
-                  {week.activeStep ? (
-                    <div className="pf-week-step">
-                      <strong>{S.weekActiveStep}</strong>{" "}
-                      {week.stepInfo ? week.stepInfo.label : ""} — {week.activeStep.title}
-                    </div>
-                  ) : null}
-                  {week.actions.length === 0 ? (
+                <section className="pf-week pf-week-hub">
+                  <div className="pf-week-hub-head">
+                    <h2>{S.weekTitle}</h2>
+                    <a href={PF_HREF.pratik}>{loopLine}</a>
+                  </div>
+                  {weekPreview.length === 0 ? (
                     <p className="pf-muted">{S.weekEmpty}</p>
                   ) : (
                     <ul className="pf-week-list">
-                      {week.actions.map((a) => (
+                      {weekPreview.map((a) => (
                         <li key={a.id + a.type}>
                           <span className={"pf-week-tag " + a.type}>
                             {a.type === "continue" ? S.weekContinue : S.weekStart}
@@ -693,34 +715,57 @@ function ProfilPage() {
                       ))}
                     </ul>
                   )}
-                  {week.next ? (
-                    <div className="pf-next">
-                      <strong>{S.nextTitle}:</strong> {week.next.training_name}
-                    </div>
+                  {week.actions.length > weekPreview.length ? (
+                    <a className="pf-week-more" href={PF_HREF.yol}>{S.hubWeekMore || S.goRoadmap}</a>
                   ) : null}
                 </section>
 
-                {roadmap.length === 0 && trainings.length === 0 ? (
-                  <p className="pf-muted">{S.empty}</p>
-                ) : null}
+                <details className="pf-account">
+                  <summary>{S.accountSummary || "Hesap ve tercihler"}</summary>
+                  <div className="pf-account-body">
+                    {planInfo ? (
+                      <div className="pw-plan-row">
+                        <span className={"pw-badge " + (planInfo.plan === "plus" ? "plus" : "free")}>
+                          {planInfo.plan === "plus" ? (S.planPlus || "Plus") : (S.planFree || "Free")}
+                        </span>
+                        <span className="pw-remaining">
+                          {(S.chatsLeft || "Kalan sohbet")}: {typeof planInfo.remaining === "number" ? planInfo.remaining : "—"}
+                        </span>
+                        {planInfo.plan === "plus" ? (
+                          <button type="button" className="pw-cancel-link" onClick={onCancelPlus} disabled={busy}>
+                            {S.cancelPlus || "Aboneliği iptal et"}
+                          </button>
+                        ) : (
+                          <a className="pw-upgrade-link" href="fiyatlandirma.html">{S.upgradePlus || "Plus’a geç"}</a>
+                        )}
+                      </div>
+                    ) : null}
 
-                <section className="pf-reminders">
-                  <div className="pf-reminders-row">
-                    <div>
-                      <h3>{S.remindersTitle}</h3>
-                      <p className="pf-muted">{S.remindersHint}</p>
+                    <div className="pf-account-actions">
+                      <button type="button" className="pf-btn ghost" onClick={() => setShareOpen(true)}>
+                        {S.shareCardBtn}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className={"pf-toggle " + (remindersOn ? "on" : "")}
-                      onClick={toggleReminders}
-                      disabled={busy}
-                      aria-pressed={remindersOn}
-                    >
-                      {remindersOn ? S.remindersOn : S.remindersOff}
-                    </button>
+
+                    <div className="pf-reminders pf-reminders-inline">
+                      <div className="pf-reminders-row">
+                        <div>
+                          <h3>{S.remindersTitle}</h3>
+                          <p className="pf-muted">{S.remindersHint}</p>
+                        </div>
+                        <button
+                          type="button"
+                          className={"pf-toggle " + (remindersOn ? "on" : "")}
+                          onClick={toggleReminders}
+                          disabled={busy}
+                          aria-pressed={remindersOn}
+                        >
+                          {remindersOn ? S.remindersOn : S.remindersOff}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </section>
+                </details>
               </div>
             ) : null}
 
