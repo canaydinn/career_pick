@@ -221,6 +221,46 @@ function RecQualityPanel({ data, loading, err, days, onDays, onRefresh }) {
           </table>
         </div>
       </section>
+
+      {/* 5 — Profil sayfa trafiği */}
+      <section className="adm-block">
+        <h2>5. Profil sayfa görüntüleme</h2>
+        <p className="adm-desc">
+          Hub ailesi (<code>product_events</code>) — Bugün / Yolum / Pratikler / Keşif açılışları.
+        </p>
+        {!(data.pageViews && data.pageViews.available) ? (
+          <p className="adm-muted">
+            {(data.pageViews && data.pageViews.reason) || "Tablo yok — product_events migration gerekir."}
+          </p>
+        ) : (
+          <React.Fragment>
+            <div className="adm-stats">
+              <StatBox label="Toplam görüntüleme" value={data.pageViews.total || 0} />
+              <StatBox label="Benzersiz kullanıcı" value={data.pageViews.uniqueUsers || 0} />
+            </div>
+            <div className="adm-table-wrap">
+              <table className="adm-table">
+                <thead>
+                  <tr>
+                    <th>Sayfa</th>
+                    <th>page_id</th>
+                    <th>Adet</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.pageViews.rows || []).map((r) => (
+                    <tr key={r.page_id}>
+                      <td>{r.label}</td>
+                      <td><code>{r.page_id}</code></td>
+                      <td>{r.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </React.Fragment>
+        )}
+      </section>
     </div>
   );
 }

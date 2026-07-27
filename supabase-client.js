@@ -957,6 +957,30 @@
     return "kariyer%20sohbet.html";
   }
 
+  /** Profil ailesi sayfa görüntüleme — admin kaliteye bağlanır (product_events). */
+  async function logProductEvent(eventType, pageId, meta) {
+    const c = client();
+    const user = await getUser();
+    if (!c || !user) return { ok: false, reason: "auth" };
+    const type = String(eventType || "page_view");
+    const pid = String(pageId || "").toLowerCase();
+    if (["bugun", "yol", "pratik", "kesfet"].indexOf(pid) < 0) {
+      return { ok: false, reason: "bad_page" };
+    }
+    try {
+      const { error } = await c.from("product_events").insert({
+        user_id: user.id,
+        event_type: type,
+        page_id: pid,
+        meta: meta && typeof meta === "object" ? meta : {},
+      });
+      if (error) return { ok: false, reason: error.message };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: (e && e.message) || "error" };
+    }
+  }
+
   var CHAT_DRAFT_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
   function parseDraftJson(raw, fallback) {
@@ -2138,6 +2162,7 @@
     fetchSectorNotesPack,
     personalizeSectorNote,
     sectorCtaHref,
+    logProductEvent,
     saveCompetencySnapshot,
     fetchLastSnapshots,
     compareLastCompetencySnapshots,

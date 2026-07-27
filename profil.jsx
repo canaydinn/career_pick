@@ -304,6 +304,13 @@ function ProfilPage() {
 
   useEffect(() => {
     if (!ready || !user) return;
+    if (typeof CPAuth.logProductEvent === "function") {
+      CPAuth.logProductEvent("page_view", page, { path: PF_HREF[page] || "" }).catch(() => {});
+    }
+  }, [ready, user, page]);
+
+  useEffect(() => {
+    if (!ready || !user) return;
     if (page === "pratik") {
       const hash = String((typeof location !== "undefined" && location.hash) || "");
       if (hash === "#check-in") {
@@ -563,6 +570,7 @@ function ProfilPage() {
 
   const primaryWeekAction = week.actions && week.actions.length ? week.actions[0] : null;
   const weekPreview = (week.actions || []).slice(0, 3);
+  const hubIsEmpty = roadmap.length === 0 && trainings.length === 0 && !hasDraft;
 
   return (
     <div className="pf-page">
@@ -628,7 +636,7 @@ function ProfilPage() {
               />
             ) : null}
 
-            <nav className="pf-tabs" aria-label={S.tabAria || "Profil sayfaları"}>
+            <nav className="pf-tabs pf-tabs-top" aria-label={S.tabAria || "Profil sayfaları"}>
               {PF_PAGES.map((id) => (
                 <a
                   key={id}
@@ -688,10 +696,24 @@ function ProfilPage() {
 
                 <section className="pf-week pf-week-hub">
                   <div className="pf-week-hub-head">
-                    <h2>{S.weekTitle}</h2>
-                    <a href={PF_HREF.pratik}>{loopLine}</a>
+                    <h2>{hubIsEmpty ? (S.onboardTitle || S.weekTitle) : S.weekTitle}</h2>
+                    {!hubIsEmpty ? <a href={PF_HREF.pratik}>{loopLine}</a> : null}
                   </div>
-                  {weekPreview.length === 0 ? (
+                  {hubIsEmpty ? (
+                    <div className="pf-onboard">
+                      <p className="pf-onboard-lead">
+                        {S.onboardLead || "Önce sohbet → yol oluşur"}
+                      </p>
+                      <ol className="pf-onboard-steps">
+                        <li>{S.onboardStep1 || "Kariyer Sohbetini tamamla"}</li>
+                        <li>{S.onboardStep2 || "Yol haritan ve eğitimlerin oluşur"}</li>
+                        <li>{S.onboardStep3 || "Haftalık pratiklere ve check-in’e geç"}</li>
+                      </ol>
+                      <a className="pf-btn" href="kariyer%20sohbet.html">
+                        {S.onboardCta || S.hubCtaChat || S.chatBtn}
+                      </a>
+                    </div>
+                  ) : weekPreview.length === 0 ? (
                     <p className="pf-muted">{S.weekEmpty}</p>
                   ) : (
                     <ul className="pf-week-list">
@@ -715,7 +737,7 @@ function ProfilPage() {
                       ))}
                     </ul>
                   )}
-                  {week.actions.length > weekPreview.length ? (
+                  {!hubIsEmpty && week.actions.length > weekPreview.length ? (
                     <a className="pf-week-more" href={PF_HREF.yol}>{S.hubWeekMore || S.goRoadmap}</a>
                   ) : null}
                 </section>
@@ -1099,6 +1121,21 @@ function ProfilPage() {
           </React.Fragment>
         )}
       </div>
+
+      {user ? (
+        <nav className="pf-bottom-tabs" aria-label={S.tabAria || "Profil sayfaları"}>
+          {PF_PAGES.map((id) => (
+            <a
+              key={"b-" + id}
+              href={PF_HREF[id]}
+              className={"pf-bottom-tab" + (page === id ? " on" : "")}
+              aria-current={page === id ? "page" : undefined}
+            >
+              {(S.tabs && S.tabs[id]) || id}
+            </a>
+          ))}
+        </nav>
+      ) : null}
     </div>
   );
 }

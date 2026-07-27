@@ -364,6 +364,43 @@ async function buildThinSection(db, since) {
   };
 }
 
+async function buildPageViews(db, since) {
+  try {
+    const { data, error } = await db
+      .from("product_events")
+      .select("page_id, created_at, user_id")
+      .eq("event_type", "page_view")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(8000);
+    if (error) {
+      return { available: false, reason: error.message, total: 0, rows: [] };
+    }
+    const counts = { bugun: 0, yol: 0, pratik: 0, kesfet: 0 };
+    const users = new Set();
+    for (const e of data || []) {
+      const p = e.page_id;
+      if (counts[p] != null) counts[p] += 1;
+      if (e.user_id) users.add(e.user_id);
+    }
+    const labels = { bugun: "Bugün", yol: "Yolum", pratik: "Pratikler", kesfet: "Keşif" };
+    const rows = Object.keys(counts).map((id) => ({
+      page_id: id,
+      label: labels[id] || id,
+      count: counts[id],
+    }));
+    const total = rows.reduce((n, r) => n + r.count, 0);
+    return {
+      available: true,
+      total,
+      uniqueUsers: users.size,
+      rows,
+    };
+  } catch (e) {
+    return { available: false, reason: (e && e.message) || "error", total: 0, rows: [] };
+  }
+}
+
 export default async function handler(req, res) {
   cors(req, res);
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -383,11 +420,12 @@ export default async function handler(req, res) {
   const { db, profile } = gate;
 
   try {
-    const [empty, sectorGaps, weakJobMatch, thin] = await Promise.all([
+    const [empty, sectorGaps, weakJobMatch, thin, pageViews] = await Promise.all([
       buildEmptySection(db, since),
       buildSectorGaps(db, since),
       buildWeakJobMatch(db, since),
       buildThinSection(db, since),
+      buildPageViews(db, since),
     ]);
 
     return res.status(200).json({
@@ -399,6 +437,7 @@ export default async function handler(req, res) {
       sectorGaps,
       weakJobMatch,
       thin,
+      pageViews,
     });
   } catch (e) {
     console.error("[admin/recommendation-quality]", e);
