@@ -367,6 +367,58 @@ a.pf-tab { display: inline-flex; align-items: center; justify-content: center; }
   gap: 8px;
   margin: 0 0 22px;
 }
+.pf-loop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+  text-decoration: none;
+  color: var(--text);
+}
+.pf-loop:hover { border-color: var(--accent); }
+.pf-loop-main { font-size: 14px; font-weight: 650; line-height: 1.35; }
+.pf-loop-go {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent-2);
+}
+.pf-loop-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 16px;
+  margin: 0 0 18px;
+  padding: 12px 0 4px;
+  border-bottom: 1px solid var(--line);
+}
+.pf-loop-banner strong { font-size: 14px; font-weight: 650; }
+.pf-loop-nudge {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--accent-2);
+  text-decoration: none;
+}
+.pf-loop-nudge:hover { text-decoration: underline; }
+.pf-micro-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.pf-micro-head h3 { margin: 0; }
+.pf-micro-progress {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .pf-overall { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin-bottom: 22px; }
 .pf-overall-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 600; }
 .pf-overall-meta { margin-top: 8px; font-size: 12.5px; color: var(--faint); }

@@ -177,6 +177,9 @@ function ProfilPage() {
     }
     if (needBugun) {
       add("draft", CPAuth.fetchActiveChatDraft());
+      add("micros", CPAuth.fetchWeekMicroTasks());
+      add("checkin", CPAuth.fetchWeekCheckin());
+      add("snaps", CPAuth.fetchLastSnapshots(1));
     }
     add("usage", CPAuth.fetchUsage().catch(() => null));
     if (needYol) {
@@ -209,10 +212,12 @@ function ProfilPage() {
     if (by.checkin !== undefined) {
       const checkin = by.checkin || null;
       setWeekCheckin(checkin);
-      setCheckinEditing(!checkin);
-      setCheckinQ1(checkin ? (checkin.q1_text || "") : "");
-      setCheckinQ2(checkin ? (checkin.q2_text || "") : "");
-      setCheckinChoice(checkin ? (checkin.q2_choice || "") : "");
+      if (needPratik) {
+        setCheckinEditing(!checkin);
+        setCheckinQ1(checkin ? (checkin.q1_text || "") : "");
+        setCheckinQ2(checkin ? (checkin.q2_text || "") : "");
+        setCheckinChoice(checkin ? (checkin.q2_choice || "") : "");
+      }
     }
     if (by.history !== undefined) setCheckinHistory(by.history || []);
 
@@ -516,6 +521,24 @@ function ProfilPage() {
   const headTitle = (S.pageTitle && S.pageTitle[page]) || S.title;
   const headSub = (S.pageSubtitle && S.pageSubtitle[page]) || S.subtitle;
 
+  const microDoneCount = microTasks.filter((m) => m.status === "yapildi").length;
+  const microTotal = microTasks.length;
+  const microAllDone = microTotal > 0 && microDoneCount >= microTotal;
+  let loopMicroText = "";
+  if (microTotal > 0) {
+    loopMicroText = typeof S.loopMicro === "function"
+      ? S.loopMicro(microDoneCount, microTotal)
+      : (microDoneCount + "/" + microTotal + " pratik");
+  } else if (!hasSnapshot) {
+    loopMicroText = S.loopMicroNeedChat || S.microEmptyChat;
+  } else {
+    loopMicroText = S.loopMicroEmpty || S.microEmptyWeek;
+  }
+  const loopCheckinText = weekCheckin
+    ? (S.loopCheckinDone || "Check-in tamam")
+    : (S.loopCheckinTodo || "Check-in yap");
+  const loopLine = loopMicroText + " · " + loopCheckinText;
+
   return (
     <div className="pf-page">
       <div className="pf-top">
@@ -618,6 +641,11 @@ function ProfilPage() {
                     <p>{goal}</p>
                   </section>
                 ) : null}
+
+                <a className="pf-loop" href={PF_HREF.pratik} aria-label={S.loopAria || "Pratik döngüsü"}>
+                  <span className="pf-loop-main">{loopLine}</span>
+                  <span className="pf-loop-go">{S.loopGo || "Pratiklere git"}</span>
+                </a>
 
                 <div className="pf-hub-actions">
                   {roadmap.length > 0 ? (
@@ -776,6 +804,20 @@ function ProfilPage() {
 
             {page === "pratik" ? (
               <div className="pf-tab-panel">
+                <div className="pf-loop-banner" aria-label={S.loopAria || "Pratik döngüsü"}>
+                  <strong>{loopLine}</strong>
+                  {microAllDone && !weekCheckin ? (
+                    <a className="pf-loop-nudge" href="#check-in" onClick={() => setCheckinEditing(true)}>
+                      {S.loopNudgeCheckin || "Pratikler bitti — check-in yap"}
+                    </a>
+                  ) : null}
+                  {weekCheckin && microTotal > 0 && !microAllDone ? (
+                    <a className="pf-loop-nudge" href="#pratiker">
+                      {S.loopNudgeMicro || "Kalan pratiklere geç"}
+                    </a>
+                  ) : null}
+                </div>
+
                 <section className="pf-checkin" id="check-in" aria-label={S.checkinTitle}>
                   <h3>{S.checkinTitle}</h3>
                   <p className="pf-muted pf-checkin-hint">{S.checkinHint}</p>
@@ -881,10 +923,22 @@ function ProfilPage() {
                 </section>
 
                 <section className="pf-micro" id="pratiker">
-                  <h3>{S.microTitle}</h3>
+                  <div className="pf-micro-head">
+                    <h3>{S.microTitle}</h3>
+                    {microTotal > 0 ? (
+                      <span className="pf-micro-progress">
+                        {typeof S.loopMicro === "function"
+                          ? S.loopMicro(microDoneCount, microTotal)
+                          : (microDoneCount + "/" + microTotal)}
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="pf-muted pf-micro-hint">{S.microHint}</p>
                   {!hasSnapshot ? (
-                    <p className="pf-muted">{S.microEmptyChat}</p>
+                    <p className="pf-muted">
+                      {S.microEmptyChat}{" "}
+                      <a href="kariyer%20sohbet.html">{S.microEmptyChatCta || S.chatBtn}</a>
+                    </p>
                   ) : microTasks.length === 0 ? (
                     <p className="pf-muted">{S.microEmptyWeek}</p>
                   ) : (
