@@ -312,6 +312,15 @@
 .pf-link:hover { color: var(--accent-2); }
 .pf-btn { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 700; }
 .pf-btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+a.pf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+a.pf-btn:hover { color: var(--accent-ink); }
+a.pf-btn.ghost:hover { color: var(--text); }
 .pf-shell { max-width: 720px; margin: 0 auto; padding: 36px 20px 64px; }
 .pf-head h1 { font-family: var(--font-display); font-size: 28px; margin: 0 0 8px; }
 .pf-head p { color: var(--muted); margin: 0 0 10px; }
@@ -341,7 +350,10 @@
   border-radius: 10px;
   cursor: pointer;
   white-space: nowrap;
+  text-align: center;
+  text-decoration: none;
 }
+a.pf-tab { display: inline-flex; align-items: center; justify-content: center; }
 .pf-tab:hover { color: var(--text); }
 .pf-tab.on {
   background: var(--surface);

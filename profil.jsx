@@ -1,19 +1,54 @@
 /* global React, ReactDOM, CP_PROFIL, CPAuth, CPIcon, CPLogo, CPShareCardModal */
 const { useState, useEffect } = React;
 
-const PF_TABS = ["bugun", "yol", "pratik", "kesfet"];
+const PF_PAGES = ["bugun", "yol", "pratik", "kesfet"];
 
-function tabFromHash() {
+const PF_HREF = {
+  bugun: "profil.html",
+  yol: "yol-haritam.html",
+  pratik: "pratikler.html",
+  kesfet: "kesfet.html",
+};
+
+function pageFromBody() {
   try {
-    const h = String((typeof location !== "undefined" && location.hash) || "")
-      .replace(/^#/, "")
-      .toLowerCase();
-    if (h === "check-in" || h === "pratiker") return "pratik";
-    if (h === "sektor-notlari") return "kesfet";
-    if (PF_TABS.indexOf(h) >= 0) return h;
+    const id = String(
+      (typeof document !== "undefined" && document.body && document.body.dataset.pfPage) || ""
+    ).toLowerCase();
+    if (PF_PAGES.indexOf(id) >= 0) return id;
   } catch (e) { /* ignore */ }
   return "bugun";
 }
+
+/** Legacy profil.html#… → real pages (run once, before React). */
+function redirectLegacyProfilHash() {
+  try {
+    if (pageFromBody() !== "bugun") return;
+    const path = String((location.pathname || "").split("/").pop() || "").toLowerCase();
+    if (path && path !== "profil.html" && path !== "" && path !== "profil") return;
+
+    const h = String(location.hash || "").replace(/^#/, "").toLowerCase();
+    if (!h || h === "bugun") return;
+
+    let target = "";
+    let keepHash = "";
+    if (h === "yol") {
+      target = PF_HREF.yol;
+    } else if (h === "pratik" || h === "check-in" || h === "pratiker") {
+      target = PF_HREF.pratik;
+      if (h === "check-in") keepHash = "#check-in";
+      else if (h === "pratiker") keepHash = "#pratiker";
+    } else if (h === "kesfet" || h === "sektor-notlari") {
+      target = PF_HREF.kesfet;
+      if (h === "sektor-notlari") keepHash = "#sektor-notlari";
+    }
+    if (target) {
+      location.replace(target + (location.search || "") + keepHash);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+redirectLegacyProfilHash();
 
 function statusClass(status) {
   if (status === "tamamlandi") return "done";
@@ -73,6 +108,7 @@ function TrainingCard({ t, S, lang, busy, onStart, onComplete, openLink, resolve
 function ProfilPage() {
   const lang = (typeof localStorage !== "undefined" && localStorage.getItem("cp_lang")) === "en" ? "en" : "tr";
   const S = CP_PROFIL[lang];
+  const page = pageFromBody();
 
   const [ready, setReady] = useState(false);
   const [configured, setConfigured] = useState(true);
@@ -100,19 +136,6 @@ function ProfilPage() {
   const [mevcutRolDraft, setMevcutRolDraft] = useState("");
   const [yataySuggestions, setYataySuggestions] = useState([]);
   const [yatayBusy, setYatayBusy] = useState(false);
-  const [tab, setTab] = useState(tabFromHash);
-
-  function goTab(id) {
-    const next = PF_TABS.indexOf(id) >= 0 ? id : "bugun";
-    setTab(next);
-    try {
-      if (typeof history !== "undefined" && history.replaceState) {
-        history.replaceState(null, "", "#" + next);
-      } else if (typeof location !== "undefined") {
-        location.hash = next;
-      }
-    } catch (e) { /* ignore */ }
-  }
 
   async function loadYatayGecis(rol) {
     const text = String(rol || "").trim();
@@ -132,53 +155,88 @@ function ProfilPage() {
   }
 
   async function loadPlan() {
-    const [t, steps, g, cmp, micros, snaps, pack, draft, checkin, history, usage] = await Promise.all([
-      CPAuth.fetchTrainings(),
-      CPAuth.fetchActiveRoadmap(),
-      CPAuth.fetchCareerGoal(),
-      CPAuth.fetchCompetencyComparisonSummary(),
-      CPAuth.fetchWeekMicroTasks(),
-      CPAuth.fetchLastSnapshots(1),
-      CPAuth.fetchSectorNotesPack({ locale: lang, personalize: false }),
-      CPAuth.fetchActiveChatDraft(),
-      CPAuth.fetchWeekCheckin(),
-      CPAuth.fetchCheckinHistory(6),
-      CPAuth.fetchUsage().catch(() => null),
-    ]);
-    setTrainings(t);
-    setRoadmap(steps);
-    setGoal(g || "");
-    setSkillSummary(cmp || null);
-    setMicroTasks(micros || []);
-    setHasSnapshot(!!(snaps && snaps.length));
-    setSectorPack(pack || null);
-    setHasDraft(!!draft);
-    setWeekCheckin(checkin || null);
-    setCheckinHistory(history || []);
-    setCheckinEditing(!checkin);
-    setCheckinQ1(checkin ? (checkin.q1_text || "") : "");
-    setCheckinQ2(checkin ? (checkin.q2_text || "") : "");
-    setCheckinChoice(checkin ? (checkin.q2_choice || "") : "");
-    if (usage && usage.ok) setPlanInfo(usage);
+    const needBugun = page === "bugun";
+    const needYol = page === "yol";
+    const needPratik = page === "pratik";
+    const needKesfet = page === "kesfet";
 
-    // Opsiyonel kisilestirme — notlar zaten gorunur; cumleler sonra eklenir
-    if (pack && pack.notes && pack.notes.length) {
-      const goalText = g || "";
-      const sectorAnswer = pack.sector_answer || "";
-      Promise.all(
-        pack.notes.map(async (n) => {
-          const line = await CPAuth.personalizeSectorNote(n, {
-            goal: goalText,
-            sectorAnswer: sectorAnswer,
+    const jobs = [];
+    const keys = [];
+
+    function add(key, promise) {
+      keys.push(key);
+      jobs.push(promise);
+    }
+
+    if (needBugun || needYol) {
+      add("trainings", CPAuth.fetchTrainings());
+      add("roadmap", CPAuth.fetchActiveRoadmap());
+    }
+    if (needBugun || needKesfet) {
+      add("goal", CPAuth.fetchCareerGoal());
+    }
+    if (needBugun) {
+      add("draft", CPAuth.fetchActiveChatDraft());
+    }
+    add("usage", CPAuth.fetchUsage().catch(() => null));
+    if (needYol) {
+      add("cmp", CPAuth.fetchCompetencyComparisonSummary());
+    }
+    if (needPratik) {
+      add("micros", CPAuth.fetchWeekMicroTasks());
+      add("snaps", CPAuth.fetchLastSnapshots(1));
+      add("checkin", CPAuth.fetchWeekCheckin());
+      add("history", CPAuth.fetchCheckinHistory(6));
+      add("goal", CPAuth.fetchCareerGoal());
+    }
+    if (needKesfet) {
+      add("pack", CPAuth.fetchSectorNotesPack({ locale: lang, personalize: false }));
+    }
+
+    const results = await Promise.all(jobs);
+    const by = {};
+    keys.forEach((k, i) => { by[k] = results[i]; });
+
+    if (by.trainings !== undefined) setTrainings(by.trainings || []);
+    if (by.roadmap !== undefined) setRoadmap(by.roadmap || []);
+    if (by.goal !== undefined) setGoal(by.goal || "");
+    if (by.cmp !== undefined) setSkillSummary(by.cmp || null);
+    if (by.micros !== undefined) setMicroTasks(by.micros || []);
+    if (by.snaps !== undefined) setHasSnapshot(!!(by.snaps && by.snaps.length));
+    if (by.draft !== undefined) setHasDraft(!!by.draft);
+    if (by.usage !== undefined && by.usage && by.usage.ok) setPlanInfo(by.usage);
+
+    if (by.checkin !== undefined) {
+      const checkin = by.checkin || null;
+      setWeekCheckin(checkin);
+      setCheckinEditing(!checkin);
+      setCheckinQ1(checkin ? (checkin.q1_text || "") : "");
+      setCheckinQ2(checkin ? (checkin.q2_text || "") : "");
+      setCheckinChoice(checkin ? (checkin.q2_choice || "") : "");
+    }
+    if (by.history !== undefined) setCheckinHistory(by.history || []);
+
+    const pack = by.pack;
+    if (pack !== undefined) {
+      setSectorPack(pack || null);
+      if (pack && pack.notes && pack.notes.length) {
+        const goalText = by.goal || goal || "";
+        const sectorAnswer = pack.sector_answer || "";
+        Promise.all(
+          pack.notes.map(async (n) => {
+            const line = await CPAuth.personalizeSectorNote(n, {
+              goal: goalText,
+              sectorAnswer: sectorAnswer,
+            });
+            return line ? Object.assign({}, n, { personal_line: line }) : n;
+          })
+        ).then((enriched) => {
+          setSectorPack((prev) => {
+            if (!prev || prev.sector_key !== pack.sector_key) return prev;
+            return Object.assign({}, prev, { notes: enriched });
           });
-          return line ? Object.assign({}, n, { personal_line: line }) : n;
-        })
-      ).then((enriched) => {
-        setSectorPack((prev) => {
-          if (!prev || prev.sector_key !== pack.sector_key) return prev;
-          return Object.assign({}, prev, { notes: enriched });
-        });
-      }).catch(() => {});
+        }).catch(() => {});
+      }
     }
   }
 
@@ -199,7 +257,7 @@ function ProfilPage() {
         setMevcutRolDraft(rol);
         await loadPlan();
         if (!alive) return;
-        await loadYatayGecis(rol);
+        if (page === "kesfet") await loadYatayGecis(rol);
       } else {
         setProfile(null);
         setTrainings([]);
@@ -240,22 +298,29 @@ function ProfilPage() {
   }, []);
 
   useEffect(() => {
-    function onHash() {
-      setTab(tabFromHash());
-    }
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-
-  useEffect(() => {
     if (!ready || !user) return;
-    const h = tabFromHash();
-    setTab(h);
-    if (h === "pratik" && (typeof location !== "undefined" && location.hash === "#check-in")) {
-      setCheckinEditing(true);
-      // scroll after tab content mounts
+    if (page === "pratik") {
+      const hash = String((typeof location !== "undefined" && location.hash) || "");
+      if (hash === "#check-in") {
+        setCheckinEditing(true);
+        setTimeout(() => {
+          const el = document.getElementById("check-in");
+          if (el) {
+            try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { /* ignore */ }
+          }
+        }, 50);
+      } else if (hash === "#pratiker") {
+        setTimeout(() => {
+          const el = document.getElementById("pratiker");
+          if (el) {
+            try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { /* ignore */ }
+          }
+        }, 50);
+      }
+    }
+    if (page === "kesfet" && location.hash === "#sektor-notlari") {
       setTimeout(() => {
-        const el = document.getElementById("check-in");
+        const el = document.getElementById("sektor-notlari");
         if (el) {
           try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { /* ignore */ }
         }
@@ -272,6 +337,13 @@ function ProfilPage() {
       }
     } catch (e) { /* ignore */ }
   }, [ready, user]);
+
+  useEffect(() => {
+    try {
+      const titles = (S.pageTitle && S.pageTitle[page]) || "";
+      if (titles) document.title = titles + " — Career Pick";
+    } catch (e) { /* ignore */ }
+  }, [page, lang]);
 
   async function onCancelPlus() {
     if (!window.confirm(S.cancelConfirm || "Plus aboneliğini iptal etmek istiyor musun?")) return;
@@ -303,7 +375,8 @@ function ProfilPage() {
 
   async function login() {
     try {
-      sessionStorage.setItem("cp_auth_next", "profil.html");
+      const next = PF_HREF[page] || "profil.html";
+      sessionStorage.setItem("cp_auth_next", next);
       await CPAuth.signInWithGoogle(location.origin + "/auth-callback.html");
     } catch (e) {
       alert(e.message || S.notConfigured);
@@ -440,6 +513,8 @@ function ProfilPage() {
   });
 
   const cardProps = { S, lang, busy, onStart, onComplete, openLink, resolveLink };
+  const headTitle = (S.pageTitle && S.pageTitle[page]) || S.title;
+  const headSub = (S.pageSubtitle && S.pageSubtitle[page]) || S.subtitle;
 
   return (
     <div className="pf-page">
@@ -458,8 +533,8 @@ function ProfilPage() {
 
       <div className="pf-shell">
         <header className="pf-head">
-          <h1>{S.title}</h1>
-          <p>{S.subtitle}</p>
+          <h1>{headTitle}</h1>
+          <p>{headSub}</p>
           {user && name ? <div className="pf-user">{name}</div> : null}
           {user && planInfo ? (
             <div className="pw-plan-row">
@@ -501,21 +576,20 @@ function ProfilPage() {
               />
             ) : null}
 
-            <nav className="pf-tabs" aria-label={S.tabAria || "Profil bölümleri"}>
-              {PF_TABS.map((id) => (
-                <button
+            <nav className="pf-tabs" aria-label={S.tabAria || "Profil sayfaları"}>
+              {PF_PAGES.map((id) => (
+                <a
                   key={id}
-                  type="button"
-                  className={"pf-tab" + (tab === id ? " on" : "")}
-                  aria-selected={tab === id}
-                  onClick={() => goTab(id)}
+                  href={PF_HREF[id]}
+                  className={"pf-tab" + (page === id ? " on" : "")}
+                  aria-current={page === id ? "page" : undefined}
                 >
                   {(S.tabs && S.tabs[id]) || id}
-                </button>
+                </a>
               ))}
             </nav>
 
-            {tab === "bugun" ? (
+            {page === "bugun" ? (
               <div className="pf-tab-panel">
                 {hasDraft ? (
                   <div className="pf-draft-resume">
@@ -547,13 +621,13 @@ function ProfilPage() {
 
                 <div className="pf-hub-actions">
                   {roadmap.length > 0 ? (
-                    <button type="button" className="pf-btn ghost" onClick={() => goTab("yol")}>
+                    <a className="pf-btn ghost" href={PF_HREF.yol}>
                       {S.goRoadmap || "Yol haritana git"}
-                    </button>
+                    </a>
                   ) : null}
-                  <button type="button" className="pf-btn ghost" onClick={() => goTab("pratik")}>
+                  <a className="pf-btn ghost" href={PF_HREF.pratik}>
                     {S.goPratik || "Pratiklere git"}
-                  </button>
+                  </a>
                   <button type="button" className="pf-btn" onClick={() => setShareOpen(true)}>
                     {S.shareCardBtn}
                   </button>
@@ -622,7 +696,7 @@ function ProfilPage() {
               </div>
             ) : null}
 
-            {tab === "yol" ? (
+            {page === "yol" ? (
               <div className="pf-tab-panel">
                 <section className="pf-compare-summary">
                   <h3>{S.compareSummaryTitle}</h3>
@@ -700,7 +774,7 @@ function ProfilPage() {
               </div>
             ) : null}
 
-            {tab === "pratik" ? (
+            {page === "pratik" ? (
               <div className="pf-tab-panel">
                 <section className="pf-checkin" id="check-in" aria-label={S.checkinTitle}>
                   <h3>{S.checkinTitle}</h3>
@@ -845,7 +919,7 @@ function ProfilPage() {
               </div>
             ) : null}
 
-            {tab === "kesfet" ? (
+            {page === "kesfet" ? (
               <div className="pf-tab-panel">
                 <section className="pf-current-role" aria-label={S.currentRoleTitle}>
                   <h3>{S.currentRoleTitle}</h3>

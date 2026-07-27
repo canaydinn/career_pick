@@ -952,8 +952,8 @@
   }
 
   function sectorCtaHref(ctaType) {
-    if (ctaType === "micro_task") return "profil.html#pratiker";
-    if (ctaType === "training") return "profil.html";
+    if (ctaType === "micro_task") return "pratikler.html#pratiker";
+    if (ctaType === "training") return "yol-haritam.html";
     return "kariyer%20sohbet.html";
   }
 

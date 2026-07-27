@@ -285,7 +285,7 @@ export default async function handler(req, res) {
     if (!hasCheckin) {
       lines.push(
         `<p><strong>Bu hafta ne ilerledin?</strong> ` +
-          `<a href="${base}/profil.html#check-in">Check-in’i tamamla →</a></p>`
+          `<a href="${base}/pratikler.html#check-in">Check-in’i tamamla →</a></p>`
       );
     }
     lines.push(`<p><a href="${base}/profil.html">Profiline git →</a></p>`);

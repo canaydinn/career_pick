@@ -1129,7 +1129,7 @@ function KariyerSohbet() {
               <div className="cs-sector-note">
                 <div className="cs-sector-note-head">
                   <h3>{S.result.sectorNoteTitle}</h3>
-                  <a className="cs-sector-all" href="profil.html#sektor-notlari">{S.result.sectorNoteAll}</a>
+                  <a className="cs-sector-all" href="kesfet.html#sektor-notlari">{S.result.sectorNoteAll}</a>
                 </div>
                 <p className="cs-skills-hint">{S.result.sectorNoteHint}</p>
                 <article className="cs-sector-card">
@@ -1140,7 +1140,7 @@ function KariyerSohbet() {
                   ) : null}
                   <a
                     className="cs-sector-cta"
-                    href={(window.CPAuth && CPAuth.sectorCtaHref(sectorFeatured.note.cta_type)) || "profil.html#sektor-notlari"}
+                    href={(window.CPAuth && CPAuth.sectorCtaHref(sectorFeatured.note.cta_type)) || "kesfet.html#sektor-notlari"}
                   >
                     {(S.result.sectorCta && S.result.sectorCta[sectorFeatured.note.cta_type])
                       || sectorFeatured.note.cta_type}
