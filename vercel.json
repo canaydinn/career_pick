@@ -14,7 +14,13 @@
     },
     "api/admin/recommendation-quality.js": {
       "memory": 512,
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "api/admin/_shared.js"
+    },
+    "api/admin/ops.js": {
+      "memory": 512,
+      "maxDuration": 60,
+      "includeFiles": "api/admin/_shared.js"
     },
     "api/assessment.py": {
       "memory": 1024,

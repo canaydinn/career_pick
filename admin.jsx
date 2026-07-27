@@ -1,14 +1,17 @@
 /* global React, ReactDOM, CPAuth */
 const { useState, useEffect, useCallback } = React;
 
-/** Yeni sekme eklemek: bu diziye { id, label, soon? } ekle; TAB_PANELS'e panel koy. */
+/** Yeni sekme eklemek: bu diziye { id, label } ekle; ilgili paneli render et. */
 const TABS = [
   { id: "rec-quality", label: "Öneri kalitesi" },
-  { id: "billing", label: "Abonelik", soon: true },
-  { id: "quota", label: "Kota", soon: true },
-  { id: "users", label: "Kullanıcı ara", soon: true },
-  { id: "funnel", label: "Sohbet hunisi", soon: true },
+  { id: "billing", label: "Abonelik" },
+  { id: "quota", label: "Kota" },
+  { id: "users", label: "Kullanıcı ara" },
+  { id: "funnel", label: "Sohbet hunisi" },
+  { id: "engagement", label: "Etkileşim" },
 ];
+
+const OPS_TABS = new Set(["billing", "quota", "users", "funnel", "engagement"]);
 
 function StatBox({ label, value, hint }) {
   return (
@@ -20,11 +23,325 @@ function StatBox({ label, value, hint }) {
   );
 }
 
-function SoonPanel({ title }) {
+function fmtDate(v) {
+  if (!v) return "—";
+  try {
+    return new Date(v).toLocaleDateString("tr-TR");
+  } catch (e) {
+    return String(v);
+  }
+}
+
+async function getAdminToken() {
+  const c = await CPAuth.getClient();
+  const { data: sess } = await c.auth.getSession();
+  const token = sess.session && sess.session.access_token;
+  if (!token) throw new Error("Oturum yok");
+  return token;
+}
+
+async function adminFetch(action, { days, q } = {}) {
+  const token = await getAdminToken();
+  const body = { action };
+  if (days != null) body.days = days;
+  if (q != null) body.q = q;
+  const r = await fetch("/api/admin/ops", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+    },
+    body: JSON.stringify(body),
+  });
+  const json = await r.json();
+  if (!r.ok || !json.ok) {
+    throw new Error((json && json.error) || ("HTTP " + r.status));
+  }
+  return json;
+}
+
+function UnavailableNote({ reason }) {
   return (
-    <div className="adm-soon">
-      <h2>{title}</h2>
-      <p>Bu sekme ayrı bir görevde eklenecek. Kabuk hazır.</p>
+    <p className="adm-err">
+      Veri yok — migration gerekir.
+      {reason ? <span className="adm-muted"> ({reason})</span> : null}
+    </p>
+  );
+}
+
+function DaysToolbar({ days, onDays, onRefresh, loading }) {
+  return (
+    <div className="adm-toolbar">
+      <label>
+        Dönem
+        <select value={days} onChange={(e) => onDays(Number(e.target.value))}>
+          <option value={30}>30 gün</option>
+          <option value={90}>90 gün</option>
+          <option value={180}>180 gün</option>
+          <option value={365}>365 gün</option>
+        </select>
+      </label>
+      <button type="button" className="adm-btn" onClick={onRefresh} disabled={loading}>
+        Yenile
+      </button>
+    </div>
+  );
+}
+
+function BillingPanel({ data, loading, err, onRefresh }) {
+  if (loading) return <p className="adm-muted">Yükleniyor…</p>;
+  if (err) return <p className="adm-err">{err}</p>;
+  if (!data) return null;
+  if (data.available === false) return <UnavailableNote reason={data.reason} />;
+
+  const statuses = data.subscriptionStatuses || {};
+  const statusRows = Object.keys(statuses).filter((k) => k !== "note").map((k) => ({
+    status: k,
+    count: statuses[k],
+  }));
+
+  return (
+    <div className="adm-sections">
+      <div className="adm-toolbar">
+        <button type="button" className="adm-btn" onClick={onRefresh}>Yenile</button>
+      </div>
+      <section className="adm-section">
+        <h2>Plan dağılımı</h2>
+        <div className="adm-stats">
+          <StatBox label="Free" value={data.free || 0} />
+          <StatBox label="Plus" value={data.plus || 0} />
+          <StatBox label="Toplam profil" value={data.total || 0} />
+        </div>
+      </section>
+      {statusRows.length ? (
+        <section className="adm-section">
+          <h2>Abonelik durumu</h2>
+          <table className="adm-table">
+            <thead><tr><th>Status</th><th>Adet</th></tr></thead>
+            <tbody>
+              {statusRows.map((r) => (
+                <tr key={r.status}><td>{r.status}</td><td>{r.count}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+      <section className="adm-section">
+        <h2>Son Plus kullanıcılar</h2>
+        <table className="adm-table">
+          <thead>
+            <tr><th>E-posta</th><th>Ad</th><th>Bitiş</th></tr>
+          </thead>
+          <tbody>
+            {(data.recentPlus || []).length === 0 ? (
+              <tr><td colSpan={3} className="adm-muted">Plus yok</td></tr>
+            ) : (data.recentPlus || []).map((r, i) => (
+              <tr key={r.email + i}>
+                <td>{r.email}</td>
+                <td>{r.display_name || "—"}</td>
+                <td>{fmtDate(r.plan_expires_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      {(data.recentSubscriptions || []).length ? (
+        <section className="adm-section">
+          <h2>Son abonelik kayıtları</h2>
+          <table className="adm-table">
+            <thead>
+              <tr><th>E-posta</th><th>Status</th><th>Dönem sonu</th><th>Oluşturulma</th></tr>
+            </thead>
+            <tbody>
+              {(data.recentSubscriptions || []).map((r, i) => (
+                <tr key={i}>
+                  <td>{r.email}</td>
+                  <td>{r.status}</td>
+                  <td>{fmtDate(r.current_period_end)}</td>
+                  <td>{fmtDate(r.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function QuotaPanel({ data, loading, err, days, onDays, onRefresh }) {
+  if (loading) return <p className="adm-muted">Yükleniyor…</p>;
+  if (err) return <p className="adm-err">{err}</p>;
+  if (!data) return null;
+  if (data.available === false) return <UnavailableNote reason={data.reason} />;
+
+  return (
+    <div className="adm-sections">
+      <DaysToolbar days={days} onDays={onDays} onRefresh={onRefresh} loading={loading} />
+      <section className="adm-section">
+        <h2>Kota özeti</h2>
+        <div className="adm-stats">
+          <StatBox label="Free kullanılan (toplam)" value={data.freeUsedSum || 0} />
+          <StatBox label="Plus kullanılan (toplam)" value={data.plusUsedSum || 0} />
+          <StatBox label="Limiti dolu free" value={data.exhaustedFreeCount || 0} hint={`limit ${data.freeChatLimit}`} />
+          <StatBox label="Dönem chat_completions" value={data.completionsInPeriod || 0} />
+        </div>
+      </section>
+      <section className="adm-section">
+        <h2>Free limiti dolu</h2>
+        <table className="adm-table">
+          <thead>
+            <tr><th>E-posta</th><th>Plan</th><th>Free</th><th>Plus</th><th>Dönem</th></tr>
+          </thead>
+          <tbody>
+            {(data.exhaustedRows || []).length === 0 ? (
+              <tr><td colSpan={5} className="adm-muted">Yok</td></tr>
+            ) : (data.exhaustedRows || []).map((r, i) => (
+              <tr key={r.email + i}>
+                <td>{r.email}</td>
+                <td>{r.plan}</td>
+                <td>{r.free_chats_used}</td>
+                <td>{r.plus_chats_used}</td>
+                <td>{fmtDate(r.period_start)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
+function UsersPanel({ data, loading, err, q, onQ, onSearch }) {
+  return (
+    <div className="adm-sections">
+      <div className="adm-toolbar">
+        <label>
+          Ara
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => onQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") onSearch(); }}
+            placeholder="e-posta veya ad"
+            style={{ minWidth: "14rem" }}
+          />
+        </label>
+        <button type="button" className="adm-btn" onClick={onSearch} disabled={loading}>
+          Ara
+        </button>
+      </div>
+      {loading ? <p className="adm-muted">Yükleniyor…</p> : null}
+      {err ? <p className="adm-err">{err}</p> : null}
+      {data && data.available === false ? <UnavailableNote reason={data.reason} /> : null}
+      {data && data.needQuery ? (
+        <p className="adm-muted">En az 2 karakter yazıp ara.</p>
+      ) : null}
+      {data && data.available !== false && !data.needQuery ? (
+        <section className="adm-section">
+          <h2>Sonuçlar ({data.total || 0})</h2>
+          <table className="adm-table">
+            <thead>
+              <tr>
+                <th>E-posta</th>
+                <th>Ad</th>
+                <th>Plan</th>
+                <th>Free chat</th>
+                <th>Kayıt</th>
+                <th>Son snapshot</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.rows || []).length === 0 ? (
+                <tr><td colSpan={6} className="adm-muted">Eşleşme yok</td></tr>
+              ) : (data.rows || []).map((r) => (
+                <tr key={r.id}>
+                  <td>{r.email}</td>
+                  <td>{r.display_name || "—"}</td>
+                  <td>{r.plan}</td>
+                  <td>{r.free_chats_used == null ? "—" : r.free_chats_used}</td>
+                  <td>{fmtDate(r.created_at)}</td>
+                  <td>{fmtDate(r.last_snapshot_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function FunnelPanel({ data, loading, err, days, onDays, onRefresh }) {
+  if (loading) return <p className="adm-muted">Yükleniyor…</p>;
+  if (err) return <p className="adm-err">{err}</p>;
+  if (!data) return null;
+  if (data.available === false) return <UnavailableNote reason={data.reason} />;
+
+  const steps = data.steps || [];
+  const max = Math.max(1, ...steps.map((s) => s.count || 0));
+
+  return (
+    <div className="adm-sections">
+      <DaysToolbar days={days} onDays={onDays} onRefresh={onRefresh} loading={loading} />
+      <section className="adm-section">
+        <h2>Sohbet hunisi</h2>
+        <div className="adm-stats">
+          <StatBox label="Draft" value={data.draftsTotal || 0} />
+          <StatBox label="Tamamlanan" value={data.draftsCompleted || 0} />
+          <StatBox label="Terk" value={data.draftsAbandoned || 0} />
+          <StatBox label="Snapshot" value={data.snapshots || 0} />
+        </div>
+        <ul className="adm-funnel-list" style={{ listStyle: "none", padding: 0, marginTop: "1rem" }}>
+          {steps.map((s) => (
+            <li key={s.id} style={{ marginBottom: "0.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
+                <span>{s.label}</span>
+                <strong>{s.count}</strong>
+              </div>
+              <div style={{ height: 8, background: "rgba(0,0,0,0.08)", borderRadius: 4, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: ((s.count || 0) / max) * 100 + "%",
+                    height: "100%",
+                    background: "var(--adm-accent, #2a6f5f)",
+                  }}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function EngagementPanel({ data, loading, err, days, onDays, onRefresh }) {
+  if (loading) return <p className="adm-muted">Yükleniyor…</p>;
+  if (err) return <p className="adm-err">{err}</p>;
+  if (!data) return null;
+  if (data.available === false) return <UnavailableNote reason={data.reason} />;
+
+  return (
+    <div className="adm-sections">
+      <DaysToolbar days={days} onDays={onDays} onRefresh={onRefresh} loading={loading} />
+      <section className="adm-section">
+        <h2>Etkileşim</h2>
+        <div className="adm-stats">
+          <StatBox
+            label="Hatırlatma opt-in"
+            value={(data.remindersRate || 0) + "%"}
+            hint={data.remindersOn + " / " + data.profilesTotal}
+          />
+          <StatBox label="Check-in kullanıcı" value={data.checkinUsers || 0} hint={data.checkinRows + " kayıt"} />
+          <StatBox
+            label="Mikro pratik yapıldı"
+            value={(data.microDoneRate || 0) + "%"}
+            hint={data.microDone + " / " + data.microTotal}
+          />
+          <StatBox label="CV gap analizi" value={data.cvGapCount || 0} />
+        </div>
+      </section>
     </div>
   );
 }
@@ -272,8 +589,10 @@ function AdminApp() {
   const [tab, setTab] = useState("rec-quality");
   const [days, setDays] = useState(90);
   const [data, setData] = useState(null);
+  const [opsData, setOpsData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [userQ, setUserQ] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -298,10 +617,7 @@ function AdminApp() {
     setLoading(true);
     setErr("");
     try {
-      const c = await CPAuth.getClient();
-      const { data: sess } = await c.auth.getSession();
-      const token = sess.session && sess.session.access_token;
-      if (!token) throw new Error("Oturum yok");
+      const token = await getAdminToken();
       const r = await fetch("/api/admin/recommendation-quality", {
         method: "POST",
         headers: {
@@ -323,9 +639,37 @@ function AdminApp() {
     }
   }, [isAdmin, days]);
 
+  const loadOps = useCallback(async (action, q) => {
+    if (!isAdmin) return;
+    setLoading(true);
+    setErr("");
+    try {
+      const json = await adminFetch(action, {
+        days,
+        q: action === "users" ? (q || "") : undefined,
+      });
+      setOpsData(json.data || null);
+    } catch (e) {
+      setErr(e.message || "Yükleme hatası");
+      setOpsData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [isAdmin, days]);
+
   useEffect(() => {
-    if (ready && isAdmin && tab === "rec-quality") loadQuality();
-  }, [ready, isAdmin, tab, loadQuality]);
+    if (!ready || !isAdmin) return;
+    setErr("");
+    setOpsData(null);
+    if (tab === "rec-quality") {
+      loadQuality();
+    } else if (OPS_TABS.has(tab) && tab !== "users") {
+      loadOps(tab);
+    } else if (tab === "users") {
+      setOpsData({ available: true, needQuery: true, rows: [], total: 0 });
+      setLoading(false);
+    }
+  }, [ready, isAdmin, tab, days, loadQuality, loadOps]);
 
   async function login() {
     sessionStorage.setItem("cp_auth_next", "admin.html");
@@ -337,6 +681,7 @@ function AdminApp() {
     setUser(null);
     setIsAdmin(false);
     setData(null);
+    setOpsData(null);
   }
 
   let body = null;
@@ -362,7 +707,6 @@ function AdminApp() {
       </div>
     );
   } else {
-    const active = TABS.find((t) => t.id === tab) || TABS[0];
     body = (
       <React.Fragment>
         <nav className="adm-tabs" role="tablist">
@@ -372,11 +716,10 @@ function AdminApp() {
               type="button"
               role="tab"
               aria-selected={tab === t.id}
-              className={"adm-tab" + (tab === t.id ? " active" : "") + (t.soon ? " soon" : "")}
+              className={"adm-tab" + (tab === t.id ? " active" : "")}
               onClick={() => setTab(t.id)}
             >
               {t.label}
-              {t.soon ? <span className="adm-soon-badge">yakında</span> : null}
             </button>
           ))}
         </nav>
@@ -390,9 +733,55 @@ function AdminApp() {
               onDays={setDays}
               onRefresh={loadQuality}
             />
-          ) : (
-            <SoonPanel title={active.label} />
-          )}
+          ) : null}
+          {tab === "billing" ? (
+            <BillingPanel
+              data={opsData}
+              loading={loading}
+              err={err}
+              onRefresh={() => loadOps("billing")}
+            />
+          ) : null}
+          {tab === "quota" ? (
+            <QuotaPanel
+              data={opsData}
+              loading={loading}
+              err={err}
+              days={days}
+              onDays={setDays}
+              onRefresh={() => loadOps("quota")}
+            />
+          ) : null}
+          {tab === "users" ? (
+            <UsersPanel
+              data={opsData}
+              loading={loading}
+              err={err}
+              q={userQ}
+              onQ={setUserQ}
+              onSearch={() => loadOps("users", userQ)}
+            />
+          ) : null}
+          {tab === "funnel" ? (
+            <FunnelPanel
+              data={opsData}
+              loading={loading}
+              err={err}
+              days={days}
+              onDays={setDays}
+              onRefresh={() => loadOps("funnel")}
+            />
+          ) : null}
+          {tab === "engagement" ? (
+            <EngagementPanel
+              data={opsData}
+              loading={loading}
+              err={err}
+              days={days}
+              onDays={setDays}
+              onRefresh={() => loadOps("engagement")}
+            />
+          ) : null}
         </div>
       </React.Fragment>
     );

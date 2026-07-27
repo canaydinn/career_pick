@@ -3,70 +3,18 @@
  * Authorization: Bearer <supabase access_token>
  * Yalniz profiles.is_admin = true
  *
- * Donus: dort bolum — empty, sectorGaps, weakJobMatch, thin
+ * Donus: empty, sectorGaps, weakJobMatch, thin, pageViews
  */
-import { createClient } from "@supabase/supabase-js";
+import {
+  cors,
+  getBearer,
+  requireAdmin,
+  sinceIso,
+  parseBody,
+  parseDays,
+} from "./_shared.js";
 
 const FIT_WEAK = 55;
-const DAYS_DEFAULT = 90;
-
-function cors(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Cache-Control", "no-store");
-}
-
-function getBearer(req) {
-  const h = req.headers.authorization || "";
-  const m = /^Bearer\s+(.+)$/i.exec(h);
-  return m ? m[1].trim() : "";
-}
-
-function adminDb() {
-  const url = process.env.SUPABASE_URL || "";
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  if (!url || !key) return null;
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
-
-async function requireAdmin(token) {
-  const url = process.env.SUPABASE_URL || "";
-  const anon = process.env.SUPABASE_ANON_KEY || "";
-  if (!url || !anon || !token) return { ok: false, status: 401, error: "Unauthorized" };
-
-  const userClient = createClient(url, anon, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: authData, error: authErr } = await userClient.auth.getUser();
-  if (authErr || !authData.user) {
-    return { ok: false, status: 401, error: "Unauthorized" };
-  }
-
-  const db = adminDb();
-  if (!db) return { ok: false, status: 503, error: "Service role eksik" };
-
-  const { data: profile } = await db
-    .from("profiles")
-    .select("id, email, is_admin, display_name")
-    .eq("id", authData.user.id)
-    .maybeSingle();
-
-  if (!profile || !profile.is_admin) {
-    return { ok: false, status: 403, error: "Forbidden" };
-  }
-
-  return { ok: true, user: authData.user, profile, db };
-}
-
-function sinceIso(days) {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString();
-}
 
 function normKey(s) {
   return String(s || "")
@@ -414,8 +362,8 @@ export default async function handler(req, res) {
     return res.status(gate.status).json({ ok: false, error: gate.error });
   }
 
-  const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-  const days = Math.min(365, Math.max(7, Number(body.days || req.query?.days) || DAYS_DEFAULT));
+  const body = parseBody(req);
+  const days = parseDays(body, req.query);
   const since = sinceIso(days);
   const { db, profile } = gate;
 
