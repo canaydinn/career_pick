@@ -1,5 +1,5 @@
 /* global React, CP_CONTENT, CPIcon */
-const { useState: useState2, useMemo: useMemo2 } = React;
+const { useState: useState2, useMemo: useMemo2, useEffect: useEffect2 } = React;
 const Ic2 = window.CPIcon;
 const HOME2 = "Career Pick.html";
 
@@ -193,6 +193,10 @@ function PrivacyPage({ c }) {
 }
 
 /* ---- Blog ---- */
+function blogPostHref(slug) {
+  return "blog-yazi.html?id=" + encodeURIComponent(slug || "");
+}
+
 function BlogPage({ c }) {
   const p = c.pages.blog;
   const featured = p.posts.find((x) => x.featured) || p.posts[0];
@@ -202,7 +206,7 @@ function BlogPage({ c }) {
       <SecHero hero={p.hero} />
       <section className="section" style={{ paddingTop: 20 }}>
         <div className="wrap">
-          <a href={"kariyer%20sohbet.html"} className="blog-feature">
+          <a href={blogPostHref(featured.slug)} className="blog-feature">
             <div className={"bf-media" + (featured.image ? " has-img" : "")} data-tone="a">
               {featured.image ? (
                 <img src={featured.image} alt={featured.title} loading="eager" width="960" height="640" />
@@ -218,7 +222,7 @@ function BlogPage({ c }) {
           </a>
           <div className="blog-grid">
             {rest.map((post, i) => (
-              <a href={"kariyer%20sohbet.html"} className="post-card" key={i}>
+              <a href={blogPostHref(post.slug)} className="post-card" key={post.slug || i}>
                 <div className={"post-media" + (post.image ? " has-img" : "")} data-tone={["b", "c", "d", "a", "b"][i % 5]}>
                   {post.image ? (
                     <img src={post.image} alt={post.title} loading="lazy" width="800" height="520" />
@@ -236,6 +240,62 @@ function BlogPage({ c }) {
         </div>
       </section>
     </React.Fragment>
+  );
+}
+
+function BlogPostPage({ c, lang }) {
+  const p = c.pages.blog;
+  const ui = (window.CP_BLOG_ARTICLES && window.CP_BLOG_ARTICLES.ui && window.CP_BLOG_ARTICLES.ui[lang]) || {};
+  const articles = (window.CP_BLOG_ARTICLES && window.CP_BLOG_ARTICLES[lang]) || {};
+  const params = new URLSearchParams(location.search || "");
+  const slug = params.get("id") || "";
+  const meta = (p.posts || []).find((x) => x.slug === slug) || null;
+  const body = articles[slug] || null;
+
+  useEffect2(() => {
+    if (meta && meta.title) document.title = meta.title + " — Career Pick";
+  }, [meta]);
+
+  if (!meta || !body) {
+    return (
+      <section className="section" style={{ paddingTop: 48 }}>
+        <div className="wrap" style={{ maxWidth: 720 }}>
+          <a href="Blog.html" className="crumb"><Ic2 name="arrow" size={15} /> {ui.back || "Blog"}</a>
+          <p className="ph-sub">{ui.notFound || "Not found"}</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <article className="blog-article">
+      <div className="wrap ba-wrap">
+        <a href="Blog.html" className="crumb"><Ic2 name="arrow" size={15} /> {ui.back || "Blog"}</a>
+        <span className="post-tag">{meta.tag}</span>
+        <h1 className="ba-title">{meta.title}</h1>
+        <div className="post-meta">{meta.date} · {meta.read}</div>
+        {meta.image ? (
+          <div className="ba-hero-img">
+            <img src={meta.image} alt="" width="960" height="540" />
+          </div>
+        ) : null}
+        <p className="ba-lead">{body.lead}</p>
+        {(body.sections || []).map((sec, i) => (
+          <section className="ba-sec" key={i}>
+            {sec.h ? <h2>{sec.h}</h2> : null}
+            {(sec.p || []).map((para, j) => <p key={j}>{para}</p>)}
+            {sec.bullets && sec.bullets.length ? (
+              <ul>{sec.bullets.map((b, k) => <li key={k}>{b}</li>)}</ul>
+            ) : null}
+          </section>
+        ))}
+        <div className="ba-cta">
+          <h2>{ui.ctaTitle}</h2>
+          <p>{ui.ctaBody}</p>
+          <a href={"kariyer%20sohbet.html"} className="btn btn-primary">{ui.ctaBtn} <Ic2 name="arrow" size={17} /></a>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -323,4 +383,4 @@ function TemplatesPage({ c }) {
   );
 }
 
-window.CP_PAGES2 = { about: AboutPage, contact: ContactPage, careers: CareersPage, privacy: PrivacyPage, blog: BlogPage, guide: GuidePage, templates: TemplatesPage };
+window.CP_PAGES2 = { about: AboutPage, contact: ContactPage, careers: CareersPage, privacy: PrivacyPage, blog: BlogPage, "blog-post": BlogPostPage, guide: GuidePage, templates: TemplatesPage };

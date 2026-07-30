@@ -77,6 +77,7 @@
       posts: [
         {
           tag: "Kariyer rotası",
+          slug: "dijital-beceriler-2026",
           title: "2026'da en çok aranan 10 dijital beceri",
           excerpt: "Piyasa verilerine göre önümüzdeki yıl en değerli olacak beceriler ve bunları nasıl öğreneceğin.",
           date: "3 Haz 2026",
@@ -86,6 +87,7 @@
         },
         {
           tag: "CV",
+          slug: "ats-dostu-cv",
           title: "ATS dostu CV nasıl yazılır?",
           excerpt: "İşe alım sistemlerini geçen, insan gözünü de etkileyen bir CV için adım adım rehber.",
           date: "28 May 2026",
@@ -94,6 +96,7 @@
         },
         {
           tag: "Mülakat",
+          slug: "star-mulakat",
           title: "Davranışsal mülakat sorularına STAR ile cevap",
           excerpt: "STAR yöntemiyle hikâyeni etkili biçimde anlatmanın formülü.",
           date: "21 May 2026",
@@ -102,6 +105,7 @@
         },
         {
           tag: "Kariyer değişimi",
+          slug: "transfer-edilebilir-beceriler",
           title: "Sektör değiştirirken transfer edilebilir beceriler",
           excerpt: "Mevcut deneyimini yeni bir alana taşımanın akıllı yolları.",
           date: "14 May 2026",
@@ -110,6 +114,7 @@
         },
         {
           tag: "Maaş",
+          slug: "maas-muzakeresi-hatalari",
           title: "Maaş müzakeresinde 5 yaygın hata",
           excerpt: "Çoğu adayın masada para kaybetmesine neden olan tuzaklar ve çözümleri.",
           date: "7 May 2026",
@@ -118,6 +123,7 @@
         },
         {
           tag: "Gelişim",
+          slug: "haftada-5-saat-beceri",
           title: "Haftada 5 saatle yeni bir beceri öğrenmek",
           excerpt: "Yoğun bir programda sürdürülebilir öğrenme planı kurmanın yolu.",
           date: "30 Nis 2026",
@@ -126,6 +132,7 @@
         },
         {
           tag: "LinkedIn",
+          slug: "linkedin-profil",
           title: "LinkedIn profilini işe alımcıların fark edeceği hale getir",
           excerpt: "Başlık, özet ve deneyim satırlarını güçlendiren pratik düzenlemeler.",
           date: "23 Nis 2026",
@@ -134,6 +141,7 @@
         },
         {
           tag: "Uzak çalışma",
+          slug: "remote-portfoy",
           title: "Uzaktan iş ararken portföyünü nasıl konumlandırırsın?",
           excerpt: "Hibrit ve remote roller için görünürlük, kanıt ve başvuru stratejisi.",
           date: "16 Nis 2026",
@@ -142,6 +150,7 @@
         },
         {
           tag: "Ağ",
+          slug: "networking-4-yol",
           title: "Networking’i zorlamadan büyütmenin 4 yolu",
           excerpt: "Samimi, sürdürülebilir ve sonuç üreten bir profesyonel ağ kurmak.",
           date: "9 Nis 2026",
@@ -268,6 +277,7 @@
       posts: [
         {
           tag: "Career path",
+          slug: "dijital-beceriler-2026",
           title: "The 10 most in-demand digital skills in 2026",
           excerpt: "The skills the market will value most next year and how to learn them.",
           date: "Jun 3, 2026",
@@ -277,6 +287,7 @@
         },
         {
           tag: "Resume",
+          slug: "ats-dostu-cv",
           title: "How to write an ATS-friendly resume",
           excerpt: "A step-by-step guide to a resume that passes screening systems and impresses humans.",
           date: "May 28, 2026",
@@ -285,6 +296,7 @@
         },
         {
           tag: "Interview",
+          slug: "star-mulakat",
           title: "Answering behavioral questions with STAR",
           excerpt: "The formula for telling your story effectively with the STAR method.",
           date: "May 21, 2026",
@@ -293,6 +305,7 @@
         },
         {
           tag: "Career change",
+          slug: "transfer-edilebilir-beceriler",
           title: "Transferable skills when switching industries",
           excerpt: "Smart ways to carry your experience into a new field.",
           date: "May 14, 2026",
@@ -301,6 +314,7 @@
         },
         {
           tag: "Salary",
+          slug: "maas-muzakeresi-hatalari",
           title: "5 common mistakes in salary negotiation",
           excerpt: "The traps that cost most candidates money at the table — and how to avoid them.",
           date: "May 7, 2026",
@@ -309,6 +323,7 @@
         },
         {
           tag: "Growth",
+          slug: "haftada-5-saat-beceri",
           title: "Learning a new skill in 5 hours a week",
           excerpt: "How to build a sustainable learning plan in a busy schedule.",
           date: "Apr 30, 2026",
@@ -317,6 +332,7 @@
         },
         {
           tag: "LinkedIn",
+          slug: "linkedin-profil",
           title: "Make your LinkedIn profile stand out to recruiters",
           excerpt: "Practical edits for your headline, summary and experience lines.",
           date: "Apr 23, 2026",
@@ -325,6 +341,7 @@
         },
         {
           tag: "Remote work",
+          slug: "remote-portfoy",
           title: "How to position your portfolio for remote roles",
           excerpt: "Visibility, proof and application strategy for hybrid and remote jobs.",
           date: "Apr 16, 2026",
@@ -333,6 +350,7 @@
         },
         {
           tag: "Networking",
+          slug: "networking-4-yol",
           title: "4 ways to grow your network without forcing it",
           excerpt: "Build a genuine, sustainable professional network that leads to outcomes.",
           date: "Apr 9, 2026",

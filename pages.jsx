@@ -290,7 +290,7 @@ function PageApp() {
   return (
     <React.Fragment>
       <CPNav c={c} lang={lang} setLang={setLang} base={HOME} />
-      <Page c={c} />
+      <Page c={c} lang={lang} />
       <CPFooter c={c} base={HOME} />
       <TweaksPanel>
         <TweakSection label={lang === "tr" ? "Renk yönü" : "Color direction"} />
