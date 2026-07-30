@@ -46,13 +46,6 @@
       "includeFiles": "api/gecis_haritasi.py"
     }
   },
-  "redirects": [
-    {
-      "source": "/Fiyatlandirma.html",
-      "destination": "/fiyatlandirma.html",
-      "permanent": true
-    }
-  ],
   "crons": [
     {
       "path": "/api/reminders",
