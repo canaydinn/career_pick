@@ -86,8 +86,12 @@ function IlanUyumuPage() {
       const data = await CPAuth.analyzeJobMatch({ url: url.trim(), text: text.trim() });
       if (!data.ok) {
         setResult(null);
-        setError(data.error || S.scrapeFail);
-        if (data.need_paste || data.scrape_ok === false) setShowPaste(true);
+        if (data.error === "plus_required") {
+          setError(S.plusRequired);
+        } else {
+          setError(data.error || S.scrapeFail);
+          if (data.need_paste || data.scrape_ok === false) setShowPaste(true);
+        }
         return;
       }
       if (data.scrape_ok === false && data.scrape_error) {
@@ -198,7 +202,17 @@ function IlanUyumuPage() {
               </button>
             </form>
 
-            {error ? <p className="ju-error">{error}</p> : null}
+            {error ? (
+              <p className="ju-error">
+                {error}
+                {error === S.plusRequired ? (
+                  <React.Fragment>
+                    {" "}
+                    <a className="pw-upgrade-link" href="fiyatlandirma.html">{S.upgradePlus}</a>
+                  </React.Fragment>
+                ) : null}
+              </p>
+            ) : null}
             {savedMsg ? <p className="ju-saved">{savedMsg}</p> : null}
 
             {result && result.ok ? (

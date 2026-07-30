@@ -318,7 +318,17 @@ function KariyerSohbet() {
     (async () => {
       try {
         const u = await CPAuth.fetchUsage();
-        if (!alive || !u || !u.ok) return;
+        if (!alive) return;
+        if (!u || !u.ok) {
+          if (phase === "asking" && step === 0 && !resumed) {
+            const hasContent = answers.some((a) => String(a || "").trim());
+            if (!hasContent) {
+              setPaywallReason("free_exhausted");
+              setPaywallOpen(true);
+            }
+          }
+          return;
+        }
         setUsageInfo(u);
         // Bos yeni tur + kota yok → paywall (draft yoksa)
         if (!u.allowed && phase === "asking" && step === 0 && !resumed) {
@@ -402,7 +412,9 @@ function KariyerSohbet() {
       setPaywallOpen(true);
       return false;
     } catch (e) {
-      return true;
+      setPaywallReason("free_exhausted");
+      setPaywallOpen(true);
+      return false;
     }
   }
 

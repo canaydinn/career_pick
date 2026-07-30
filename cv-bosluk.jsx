@@ -145,7 +145,11 @@ function CvBoslukPage() {
       });
       if (!data.ok) {
         setResult(null);
-        setError(data.error || S.fileFail);
+        if (data.error === "plus_required") {
+          setError(S.plusRequired);
+        } else {
+          setError(data.error || S.fileFail);
+        }
         return;
       }
       setResult(data);
@@ -259,7 +263,17 @@ function CvBoslukPage() {
               </button>
             </form>
 
-            {error ? <p className="ju-error">{error}</p> : null}
+            {error ? (
+              <p className="ju-error">
+                {error}
+                {error === S.plusRequired ? (
+                  <React.Fragment>
+                    {" "}
+                    <a className="pw-upgrade-link" href="fiyatlandirma.html">{S.upgradePlus}</a>
+                  </React.Fragment>
+                ) : null}
+              </p>
+            ) : null}
             {savedMsg ? <p className="ju-saved">{savedMsg}</p> : null}
 
             {result && result.ok ? (

@@ -312,7 +312,21 @@
     return { scores, answers };
   }
 
+  async function requirePlusPlan() {
+    const p = await fetchPlan();
+    const plan = (p && p.plan) || "free";
+    return {
+      ok: plan === "plus",
+      plan,
+      plan_expires_at: p ? p.plan_expires_at : null,
+    };
+  }
+
   async function analyzeJobMatch({ url, text }) {
+    const plus = await requirePlusPlan();
+    if (!plus.ok) {
+      return { ok: false, error: "plus_required", plan: plus.plan || "free" };
+    }
     const profile = await buildJobMatchProfile();
     const r = await fetch("/api/job-match", {
       method: "POST",
@@ -330,6 +344,10 @@
   }
 
   async function analyzeCvGap({ cvText, cvBase64, cvFilename, targetRole }) {
+    const plus = await requirePlusPlan();
+    if (!plus.ok) {
+      return { ok: false, error: "plus_required", plan: plus.plan || "free" };
+    }
     const profile = await buildJobMatchProfile();
     const r = await fetch("/api/cv-gap", {
       method: "POST",
@@ -2255,6 +2273,7 @@
     fetchShareCardByToken,
     setShareCardPublic,
     getAccessToken,
+    requirePlusPlan,
     fetchPlan,
     fetchUsage,
     canStartChat,
