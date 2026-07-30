@@ -125,7 +125,9 @@
 .tpl-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
 .tpl-card { border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; background: rgba(255,255,255,0.02); transition: border-color .2s, transform .25s; }
 .tpl-card:hover { border-color: var(--line-strong); transform: translateY(-5px); }
-.tpl-thumb { position: relative; aspect-ratio: 3 / 4; display: grid; place-items: center; padding: 22px; background: linear-gradient(160deg, var(--surface-2), var(--bg-2)); overflow: hidden; }
+.tpl-thumb { position: relative; aspect-ratio: 3 / 4; display: grid; place-items: center; padding: 0; background: linear-gradient(160deg, var(--surface-2), var(--bg-2)); overflow: hidden; }
+.tpl-thumb.has-img { padding: 0; }
+.tpl-cover { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tpl-thumb[data-tone="a"]{ background: linear-gradient(160deg, color-mix(in oklab, var(--accent) 35%, var(--surface-2)), var(--bg-2)); }
 .tpl-thumb[data-tone="b"]{ background: linear-gradient(160deg, var(--surface-2), var(--bg)); }
 .tpl-thumb[data-tone="c"]{ background: linear-gradient(160deg, color-mix(in oklab, var(--accent-2) 30%, var(--surface-2)), var(--bg-2)); }
@@ -135,8 +137,8 @@
 .tp-line { height: 5px; border-radius: 3px; background: #d3dae6; }
 .tp-line.w90{width:90%;} .tp-line.w80{width:80%;} .tp-line.w70{width:70%;} .tp-line.w60{width:60%;} .tp-line.w40{width:40%;}
 .tp-gap { height: 6px; }
-.tpl-hover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: color-mix(in oklab, var(--bg) 78%, transparent); opacity: 0; transition: opacity .2s; }
-.tpl-hover .btn { padding: 11px 22px; }
+.tpl-hover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: color-mix(in oklab, var(--bg) 78%, transparent); opacity: 0; transition: opacity .2s; z-index: 1; }
+.tpl-hover .btn { padding: 11px 22px; border: none; cursor: pointer; font: inherit; }
 .tpl-card:hover .tpl-hover { opacity: 1; }
 .tpl-info { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px 18px; }
 .tpl-name { font-family: var(--font-display); font-weight: 700; font-size: 16px; }

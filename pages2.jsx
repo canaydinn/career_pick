@@ -340,7 +340,21 @@ function TemplatesPage({ c }) {
   const p = c.pages.templates;
   const [filter, setFilter] = useState2(p.filters[0]);
   const all = p.filters[0];
-  const items = useMemo2(() => filter === all ? p.items : p.items.filter((x) => x.cat === filter), [filter, p.items]);
+  const items = useMemo2(() => (filter === all ? p.items : p.items.filter((x) => x.cat === filter)), [filter, p.items, all]);
+  const Tpl = window.CP_CV_TEMPLATES;
+
+  function onPreview(e, id) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (Tpl && Tpl.preview) Tpl.preview(id);
+  }
+
+  function onDownload(e, id) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (Tpl && Tpl.download) Tpl.download(id);
+  }
+
   return (
     <React.Fragment>
       <SecHero hero={p.hero} />
@@ -348,33 +362,38 @@ function TemplatesPage({ c }) {
         <div className="wrap">
           <div className="tpl-filters">
             {p.filters.map((f, i) => (
-              <button key={i} className={"tpl-chip" + (filter === f ? " on" : "")} onClick={() => setFilter(f)}>{f}</button>
+              <button key={i} type="button" className={"tpl-chip" + (filter === f ? " on" : "")} onClick={() => setFilter(f)}>{f}</button>
             ))}
           </div>
           <div className="tpl-grid">
-            {items.map((it, i) => (
-              <div className="tpl-card" key={it.name}>
-                <div className="tpl-thumb" data-tone={it.tone}>
-                  <div className="tpl-paper">
-                    <span className="tp-band"></span>
-                    <span className="tp-line w70"></span>
-                    <span className="tp-line w40"></span>
-                    <span className="tp-gap"></span>
-                    <span className="tp-line w90"></span>
-                    <span className="tp-line w80"></span>
-                    <span className="tp-line w60"></span>
+            {items.map((it) => {
+              const cover = Tpl && Tpl.cover ? Tpl.cover(it.id) : "";
+              return (
+                <div className="tpl-card" key={it.id || it.name}>
+                  <div className={"tpl-thumb" + (cover ? " has-img" : "")} data-tone={it.tone}>
+                    {cover ? <img className="tpl-cover" src={cover} alt={it.name} width="360" height="480" /> : (
+                      <div className="tpl-paper">
+                        <span className="tp-band"></span>
+                        <span className="tp-line w70"></span>
+                        <span className="tp-line w40"></span>
+                        <span className="tp-gap"></span>
+                        <span className="tp-line w90"></span>
+                        <span className="tp-line w80"></span>
+                        <span className="tp-line w60"></span>
+                      </div>
+                    )}
+                    <div className="tpl-hover">
+                      <button type="button" className="btn btn-primary" onClick={(e) => onDownload(e, it.id)}>{p.use}</button>
+                      <button type="button" className="btn btn-ghost" onClick={(e) => onPreview(e, it.id)}>{p.preview}</button>
+                    </div>
                   </div>
-                  <div className="tpl-hover">
-                    <a href={"kariyer%20sohbet.html"} className="btn btn-primary">{p.use}</a>
-                    <a href={"kariyer%20sohbet.html"} className="btn btn-ghost">{p.preview}</a>
+                  <div className="tpl-info">
+                    <div><div className="tpl-name">{it.name}</div><div className="tpl-desc">{it.desc}</div></div>
+                    <span className="tpl-cat">{it.cat}</span>
                   </div>
                 </div>
-                <div className="tpl-info">
-                  <div><div className="tpl-name">{it.name}</div><div className="tpl-desc">{it.desc}</div></div>
-                  <span className="tpl-cat">{it.cat}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
