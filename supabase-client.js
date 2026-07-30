@@ -327,10 +327,15 @@
     if (!plus.ok) {
       return { ok: false, error: "plus_required", plan: plus.plan || "free" };
     }
+    const token = await getAccessToken();
+    if (!token) return { ok: false, error: "plus_required", plan: "free" };
     const profile = await buildJobMatchProfile();
     const r = await fetch("/api/job-match", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token,
+      },
       body: JSON.stringify({
         url: url || "",
         text: text || "",
@@ -340,6 +345,13 @@
     let data = null;
     try { data = await r.json(); } catch (e) { data = null; }
     if (!data) return { ok: false, error: "Yanit okunamadi" };
+    if (r.status === 401 || r.status === 403) {
+      return {
+        ok: false,
+        error: data.error || "plus_required",
+        plan: data.plan || "free",
+      };
+    }
     return data;
   }
 
@@ -348,10 +360,15 @@
     if (!plus.ok) {
       return { ok: false, error: "plus_required", plan: plus.plan || "free" };
     }
+    const token = await getAccessToken();
+    if (!token) return { ok: false, error: "plus_required", plan: "free" };
     const profile = await buildJobMatchProfile();
     const r = await fetch("/api/cv-gap", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token,
+      },
       body: JSON.stringify({
         cv_text: cvText || "",
         cv_base64: cvBase64 || "",
@@ -363,6 +380,13 @@
     let data = null;
     try { data = await r.json(); } catch (e) { data = null; }
     if (!data) return { ok: false, error: "Yanit okunamadi" };
+    if (r.status === 401 || r.status === 403) {
+      return {
+        ok: false,
+        error: data.error || "plus_required",
+        plan: data.plan || "free",
+      };
+    }
     return data;
   }
 

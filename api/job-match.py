@@ -630,7 +630,7 @@ class handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", allowed)
             self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
     def _json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -648,6 +648,18 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        try:
+            from plus_gate import require_plus
+        except ImportError:
+            from api.plus_gate import require_plus
+
+        ok_plus, status_plus, gate = require_plus(self.headers)
+        if not ok_plus:
+            if "disclaimer" not in gate:
+                gate = dict(gate)
+                gate["disclaimer"] = DISCLAIMER
+            return self._json(status_plus, gate)
+
         ip = (self.headers.get("x-forwarded-for", "") or "anon").split(",")[0].strip()
         if _rate_limited(ip):
             return self._json(429, {"error": "Cok fazla istek. Lutfen biraz bekleyin."})

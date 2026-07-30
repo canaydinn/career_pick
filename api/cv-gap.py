@@ -409,7 +409,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -418,10 +418,22 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
 
     def do_POST(self):
+        try:
+            from plus_gate import require_plus
+        except ImportError:
+            from api.plus_gate import require_plus
+
+        ok_plus, status_plus, gate = require_plus(self.headers)
+        if not ok_plus:
+            if "disclaimer" not in gate:
+                gate = dict(gate)
+                gate["disclaimer"] = DISCLAIMER
+            return self._json(status_plus, gate)
+
         ip = self.headers.get("x-forwarded-for") or self.client_address[0] or "unknown"
         ip = str(ip).split(",")[0].strip()
         if not _rate_ok(ip):

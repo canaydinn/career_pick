@@ -59,11 +59,12 @@
     "api/job-match.py": {
       "memory": 1024,
       "maxDuration": 90,
-      "includeFiles": "api/gecis_haritasi.py"
+      "includeFiles": ["api/gecis_haritasi.py", "api/plus_gate.py"]
     },
     "api/cv-gap.py": {
       "memory": 1024,
-      "maxDuration": 90
+      "maxDuration": 90,
+      "includeFiles": "api/plus_gate.py"
     },
     "api/yatay-gecis.py": {
       "memory": 512,
