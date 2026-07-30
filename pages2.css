@@ -55,15 +55,24 @@
 /* ===== Blog ===== */
 .blog-feature { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 30px; transition: border-color .2s, transform .25s; }
 .blog-feature:hover { border-color: var(--line-strong); transform: translateY(-3px); }
-.bf-media { min-height: 280px; position: relative; }
-.bf-flag { position: absolute; top: 18px; left: 18px; background: var(--bg-2); color: var(--accent-2); border: 1px solid var(--line); font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 6px 12px; border-radius: 999px; }
+.bf-media { min-height: 280px; position: relative; overflow: hidden; }
+.bf-media.has-img, .post-media.has-img { background: var(--surface-2); }
+.bf-media img, .post-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  position: absolute;
+  inset: 0;
+}
+.bf-flag { position: absolute; top: 18px; left: 18px; z-index: 1; background: var(--bg-2); color: var(--accent-2); border: 1px solid var(--line); font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 6px 12px; border-radius: 999px; }
 .bf-body { padding: 36px; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
 .bf-body h2 { font-size: clamp(24px, 2.6vw, 32px); line-height: 1.1; }
 .bf-body p { color: var(--muted); font-size: 16px; line-height: 1.6; margin: 0; }
 .blog-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
 .post-card { border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; background: rgba(255,255,255,0.02); display: flex; flex-direction: column; transition: border-color .2s, transform .25s; }
 .post-card:hover { border-color: var(--line-strong); transform: translateY(-5px); }
-.post-media { height: 158px; }
+.post-media { height: 158px; position: relative; overflow: hidden; }
 .post-body { padding: 22px 22px 24px; display: flex; flex-direction: column; gap: 11px; flex: 1; }
 .post-tag { align-self: flex-start; font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent-2); background: rgba(124,227,196,0.12); padding: 5px 10px; border-radius: 999px; }
 .post-body h3 { font-size: 18.5px; line-height: 1.2; }

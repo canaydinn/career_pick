@@ -203,7 +203,12 @@ function BlogPage({ c }) {
       <section className="section" style={{ paddingTop: 20 }}>
         <div className="wrap">
           <a href={"kariyer%20sohbet.html"} className="blog-feature">
-            <div className="bf-media" data-tone="a"><span className="bf-flag">{p.featuredTag}</span></div>
+            <div className={"bf-media" + (featured.image ? " has-img" : "")} data-tone="a">
+              {featured.image ? (
+                <img src={featured.image} alt={featured.title} loading="eager" width="960" height="640" />
+              ) : null}
+              <span className="bf-flag">{p.featuredTag}</span>
+            </div>
             <div className="bf-body">
               <span className="post-tag">{featured.tag}</span>
               <h2>{featured.title}</h2>
@@ -214,7 +219,11 @@ function BlogPage({ c }) {
           <div className="blog-grid">
             {rest.map((post, i) => (
               <a href={"kariyer%20sohbet.html"} className="post-card" key={i}>
-                <div className="post-media" data-tone={["b","c","d","a","b"][i % 5]}></div>
+                <div className={"post-media" + (post.image ? " has-img" : "")} data-tone={["b", "c", "d", "a", "b"][i % 5]}>
+                  {post.image ? (
+                    <img src={post.image} alt={post.title} loading="lazy" width="800" height="520" />
+                  ) : null}
+                </div>
                 <div className="post-body">
                   <span className="post-tag">{post.tag}</span>
                   <h3>{post.title}</h3>
