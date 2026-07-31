@@ -96,9 +96,58 @@ function AboutPage({ c }) {
 }
 
 /* ---- Contact ---- */
+const CONTACT_TO = "canaydinn@gmail.com";
+
+function openContactMailto({ name, email, subject, message }) {
+  const sub = subject || "Career Pick iletişim";
+  const body = `Ad: ${name}\nE-posta: ${email}\n\n${message}`;
+  const href =
+    "mailto:" + CONTACT_TO +
+    "?subject=" + encodeURIComponent(sub) +
+    "&body=" + encodeURIComponent(body);
+  window.location.href = href;
+}
+
 function ContactPage({ c }) {
   const p = c.pages.contact;
   const [sent, setSent] = useState2(false);
+  const [busy, setBusy] = useState2(false);
+  const [err, setErr] = useState2("");
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    if (busy) return;
+    setErr("");
+    setSent(false);
+    const fd = new FormData(e.currentTarget);
+    const payload = {
+      name: String(fd.get("name") || "").trim(),
+      email: String(fd.get("email") || "").trim(),
+      subject: String(fd.get("subject") || "").trim(),
+      message: String(fd.get("message") || "").trim(),
+    };
+    setBusy(true);
+    try {
+      const r = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (r.ok) {
+        setSent(true);
+        e.currentTarget.reset();
+        return;
+      }
+      setErr(p.fields.error || "");
+      openContactMailto(payload);
+    } catch (_) {
+      setErr(p.fields.error || "");
+      openContactMailto(payload);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <React.Fragment>
       <SecHero hero={p.hero} />
@@ -114,16 +163,20 @@ function ContactPage({ c }) {
               ))}
               <div className="contact-hours">{p.hours}</div>
             </div>
-            <form className="contact-form" onSubmit={(e) => { e.preventDefault(); setSent(true); }}>
+            <form className="contact-form" onSubmit={onSubmit}>
               <h3>{p.formTitle}</h3>
               <div className="cf-row">
-                <label>{p.fields.name}<input type="text" required /></label>
-                <label>{p.fields.email}<input type="email" required /></label>
+                <label>{p.fields.name}<input name="name" type="text" required autoComplete="name" /></label>
+                <label>{p.fields.email}<input name="email" type="email" required autoComplete="email" /></label>
               </div>
-              <label>{p.fields.subject}<input type="text" /></label>
-              <label>{p.fields.message}<textarea rows="5" required></textarea></label>
-              <button type="submit" className="btn btn-primary">{p.fields.send} <Ic2 name="arrow" size={16} /></button>
+              <label>{p.fields.subject}<input name="subject" type="text" /></label>
+              <label>{p.fields.message}<textarea name="message" rows="5" required></textarea></label>
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                {busy ? (p.fields.sending || p.fields.send) : p.fields.send}{" "}
+                {!busy && <Ic2 name="arrow" size={16} />}
+              </button>
               {sent && <div className="cf-sent"><Ic2 name="check" size={16} /> {p.fields.sent}</div>}
+              {err && !sent && <div className="cf-err">{err}</div>}
             </form>
           </div>
         </div>

@@ -30,12 +30,21 @@
     contact: {
       hero: { eyebrow: "İletişim", title: ["Bizimle", "iletişime geç"], sub: "Sorun, geri bildirimin ya da işbirliği fikrin mi var? Seni dinlemek isteriz." },
       cards: [
-        { icon: "globe", title: "Genel sorular", v: "merhaba@careerpick.com" },
-        { icon: "spark", title: "Destek", v: "destek@careerpick.com" },
-        { icon: "route", title: "İş birliği", v: "ortaklik@careerpick.com" },
+        { icon: "globe", title: "Genel sorular", v: "canaydinn@gmail.com" },
+        { icon: "spark", title: "Destek", v: "canaydinn@gmail.com" },
+        { icon: "route", title: "İş birliği", v: "canaydinn@gmail.com" },
       ],
       formTitle: "Mesaj gönder",
-      fields: { name: "Adın", email: "E-posta", subject: "Konu", message: "Mesajın", send: "Mesajı gönder", sent: "Teşekkürler! Mesajın alındı (demo)." },
+      fields: {
+        name: "Adın",
+        email: "E-posta",
+        subject: "Konu",
+        message: "Mesajın",
+        send: "Mesajı gönder",
+        sending: "Gönderiliyor…",
+        sent: "Teşekkürler! Mesajın canaydinn@gmail.com adresine iletildi.",
+        error: "Gönderilemedi. E-posta uygulaman açılacak.",
+      },
       hours: "Pazartesi–Cuma, 09:00–18:00 (GMT+3) arasında yanıt veriyoruz.",
     },
     careers: {
@@ -230,12 +239,21 @@
     contact: {
       hero: { eyebrow: "Contact", title: ["Get in", "touch with us"], sub: "Have a question, feedback or a collaboration idea? We'd love to hear from you." },
       cards: [
-        { icon: "globe", title: "General", v: "hello@careerpick.com" },
-        { icon: "spark", title: "Support", v: "support@careerpick.com" },
-        { icon: "route", title: "Partnerships", v: "partners@careerpick.com" },
+        { icon: "globe", title: "General", v: "canaydinn@gmail.com" },
+        { icon: "spark", title: "Support", v: "canaydinn@gmail.com" },
+        { icon: "route", title: "Partnerships", v: "canaydinn@gmail.com" },
       ],
       formTitle: "Send a message",
-      fields: { name: "Your name", email: "Email", subject: "Subject", message: "Your message", send: "Send message", sent: "Thanks! Your message was received (demo)." },
+      fields: {
+        name: "Your name",
+        email: "Email",
+        subject: "Subject",
+        message: "Your message",
+        send: "Send message",
+        sending: "Sending…",
+        sent: "Thanks! Your message was sent to canaydinn@gmail.com.",
+        error: "Could not send. Your email app will open.",
+      },
       hours: "We reply Monday–Friday, 9am–6pm (GMT+3).",
     },
     careers: {

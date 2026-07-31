@@ -32,6 +32,8 @@
 .contact-form input:focus, .contact-form textarea:focus { border-color: var(--accent); }
 .contact-form .btn { align-self: flex-start; margin-top: 4px; }
 .cf-sent { display: flex; align-items: center; gap: 8px; color: var(--accent-2); font-size: 14px; font-weight: 600; }
+.cf-err { font-size: 13.5px; color: #f0a0a0; font-weight: 500; }
+.contact-form .btn:disabled { opacity: .65; cursor: wait; }
 @media (max-width: 880px){ .contact-grid { grid-template-columns: 1fr; } .cf-row { grid-template-columns: 1fr; } }
 
 /* ===== Careers ===== */
