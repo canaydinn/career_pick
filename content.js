@@ -73,7 +73,7 @@ window.CP_CONTENT = {
       cta: "Asistanla konuşmaya başla",
       cols: [
         { h: "Ürün", links: [{ l: "Özellikler", h: "Ozellikler.html" }, { l: "Nasıl çalışır", h: "Nasil-Calisir.html" }, { l: "Fiyatlandırma", h: "fiyatlandirma.html" }, { l: "Güncellemeler", h: "Guncellemeler.html" }] },
-        { h: "Kaynaklar", links: [{ l: "Blog", h: "Blog.html" }, { l: "Kariyer rehberi", h: "Kariyer-Rehberi.html" }, { l: "CV şablonları", h: "CV-Sablonlari.html" }, { l: "SSS", h: "Career Pick.html#faq" }] },
+        { h: "Kaynaklar", links: [{ l: "Blog", h: "Blog.html" }, { l: "Kariyer rehberi", h: "Kariyer-Rehberi.html" }, { l: "CV şablonları", h: "CV-Sablonlari.html" }, { l: "SSS", h: "index.html#faq" }] },
         { h: "Şirket", links: [{ l: "Hakkımızda", h: "Hakkimizda.html" }, { l: "Kariyer", h: "Kariyer.html" }, { l: "İletişim", h: "Iletisim.html" }, { l: "Gizlilik", h: "Gizlilik.html" }] },
       ],
       rights: "© 2026 Career Pick. Tüm hakları saklıdır.",
@@ -152,7 +152,7 @@ window.CP_CONTENT = {
       cta: "Start talking to the assistant",
       cols: [
         { h: "Product", links: [{ l: "Features", h: "Ozellikler.html" }, { l: "How it works", h: "Nasil-Calisir.html" }, { l: "Pricing", h: "fiyatlandirma.html" }, { l: "Changelog", h: "Guncellemeler.html" }] },
-        { h: "Resources", links: [{ l: "Blog", h: "Blog.html" }, { l: "Career guide", h: "Kariyer-Rehberi.html" }, { l: "Resume templates", h: "CV-Sablonlari.html" }, { l: "FAQ", h: "Career Pick.html#faq" }] },
+        { h: "Resources", links: [{ l: "Blog", h: "Blog.html" }, { l: "Career guide", h: "Kariyer-Rehberi.html" }, { l: "Resume templates", h: "CV-Sablonlari.html" }, { l: "FAQ", h: "index.html#faq" }] },
         { h: "Company", links: [{ l: "About", h: "Hakkimizda.html" }, { l: "Careers", h: "Kariyer.html" }, { l: "Contact", h: "Iletisim.html" }, { l: "Privacy", h: "Gizlilik.html" }] },
       ],
       rights: "© 2026 Career Pick. All rights reserved.",

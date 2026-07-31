@@ -21,6 +21,20 @@ function App() {
 
   CPuseReveal();
 
+  // After React mount, scroll to hash targets like #faq (browser may miss SPA content)
+  useEffectA(() => {
+    const hash = String(location.hash || "").replace(/^#/, "");
+    if (!hash) return;
+    const go = () => {
+      const el = document.getElementById(hash);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    go();
+    const t1 = setTimeout(go, 80);
+    const t2 = setTimeout(go, 320);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [lang]);
+
   return (
     <React.Fragment>
       <CPNav c={c} lang={lang} setLang={setLang} />

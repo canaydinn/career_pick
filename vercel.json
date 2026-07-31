@@ -1,4 +1,16 @@
 {
+  "redirects": [
+    {
+      "source": "/Career%20Pick.html",
+      "destination": "/index.html",
+      "permanent": true
+    },
+    {
+      "source": "/Career Pick.html",
+      "destination": "/index.html",
+      "permanent": true
+    }
+  ],
   "functions": {
     "api/chat.js": {
       "memory": 512,

@@ -1,7 +1,7 @@
 /* global React, ReactDOM, CP_CONTENT, useTweaks, TweaksPanel, TweakSection, TweakRadio, TweakSelect, CPNav, CPFooter, CPIcon */
 const { useState: useStateP, useEffect: useEffectP } = React;
 const IcP = window.CPIcon;
-const HOME = "Career Pick.html";
+const HOME = "index.html";
 
 function Check() { return <span className="ck"><IcP name="check" size={14} /></span>; }
 

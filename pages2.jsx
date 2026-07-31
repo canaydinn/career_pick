@@ -1,7 +1,7 @@
 /* global React, CP_CONTENT, CPIcon */
 const { useState: useState2, useMemo: useMemo2, useEffect: useEffect2 } = React;
 const Ic2 = window.CPIcon;
-const HOME2 = "Career Pick.html";
+const HOME2 = "index.html";
 
 function Crumb() {
   return <a href={HOME2} className="crumb"><Ic2 name="arrow" size={15} /> Career Pick</a>;
